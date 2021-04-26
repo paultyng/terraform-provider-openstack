@@ -53,7 +53,7 @@ func dataSourceComputeKeypairV2Read(d *schema.ResourceData, meta interface{}) er
 
 	name := d.Get("name").(string)
 	userID := d.Get("user_id").(string)
-	kp, err := keypairs.Get(computeClient, name, userID).Extract()
+	kp, err := keypairs.GetWithUserID(computeClient, name, userID).Extract()
 	if err != nil {
 		return fmt.Errorf("Error retrieving openstack_compute_keypair_v2 %s: %s", name, err)
 	}

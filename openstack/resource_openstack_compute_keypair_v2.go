@@ -124,7 +124,7 @@ func resourceComputeKeypairV2Read(d *schema.ResourceData, meta interface{}) erro
 	// Check if the id includes a user_id
 	id, userID := extractComputeKeyPairNameAndUserID(d.Id())
 
-	kp, err := keypairs.Get(computeClient, id, userID).Extract()
+	kp, err := keypairs.GetWithUserID(computeClient, id, userID).Extract()
 	if err != nil {
 		return CheckDeleted(d, err, "Error retrieving openstack_compute_keypair_v2")
 	}
@@ -150,7 +150,7 @@ func resourceComputeKeypairV2Delete(d *schema.ResourceData, meta interface{}) er
 	// Check if the id includes a user_id
 	id, userID := extractComputeKeyPairNameAndUserID(d.Id())
 
-	err = keypairs.Delete(computeClient, id, userID).ExtractErr()
+	err = keypairs.DeleteWithUserID(computeClient, id, userID).ExtractErr()
 	if err != nil {
 		return CheckDeleted(d, err, "Error deleting openstack_compute_keypair_v2")
 	}
