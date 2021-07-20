@@ -3,6 +3,7 @@ package openstack
 import (
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/keypairs"
 	"github.com/hashicorp/terraform-plugin-sdk/helper/schema"
@@ -28,6 +29,13 @@ func resourceComputeKeypairV2() *schema.Resource {
 			"name": {
 				Type:     schema.TypeString,
 				Required: true,
+				ForceNew: true,
+			},
+
+			"user_id": {
+				Type:     schema.TypeString,
+				Optional: true,
+				Computed: true,
 				ForceNew: true,
 			},
 
@@ -58,12 +66,25 @@ func resourceComputeKeypairV2() *schema.Resource {
 	}
 }
 
+func extractComputeKeyPairNameAndUserID(fullID string) (id string, userID string) {
+	id = fullID
+
+	separatorIndex := strings.IndexRune(fullID, ':')
+	if separatorIndex != -1 {
+		userID = fullID[:separatorIndex]
+		id = fullID[separatorIndex+1:]
+	}
+
+	return
+}
+
 func resourceComputeKeypairV2Create(d *schema.ResourceData, meta interface{}) error {
 	config := meta.(*Config)
 	computeClient, err := config.ComputeV2Client(GetRegion(d, config))
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
 
 	name := d.Get("name").(string)
 	createOpts := ComputeKeyPairV2CreateOpts{
@@ -74,6 +95,12 @@ func resourceComputeKeypairV2Create(d *schema.ResourceData, meta interface{}) er
 		MapValueSpecs(d),
 	}
 
+	// Check if the private key is for a specific user and in case update the creation properties
+	userID, isForUser := d.GetOk("user_id")
+	if isForUser {
+		createOpts.CreateOpts.UserID = userID.(string)
+	}
+
 	log.Printf("[DEBUG] openstack_compute_keypair_v2 create options: %#v", createOpts)
 
 	kp, err := keypairs.Create(computeClient, createOpts).Extract()
@@ -81,7 +108,11 @@ func resourceComputeKeypairV2Create(d *schema.ResourceData, meta interface{}) er
 		return fmt.Errorf("Unable to create openstack_compute_keypair_v2 %s: %s", name, err)
 	}
 
-	d.SetId(kp.Name)
+	id := kp.Name
+	if isForUser {
+		id = kp.UserID + ":" + id
+	}
+	d.SetId(id)
 
 	// Private Key is only available in the response to a create.
 	d.Set("private_key", kp.PrivateKey)
@@ -95,8 +126,15 @@ func resourceComputeKeypairV2Read(d *schema.ResourceData, meta interface{}) erro
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
 
-	kp, err := keypairs.Get(computeClient, d.Id()).Extract()
+	// Check if the id includes a user_id
+	id, userID := extractComputeKeyPairNameAndUserID(d.Id())
+	opts := keypairs.GetOpts{
+		UserID: userID,
+	}
+
+	kp, err := keypairs.Get(computeClient, id, opts).Extract()
 	if err != nil {
 		return CheckDeleted(d, err, "Error retrieving openstack_compute_keypair_v2")
 	}
@@ -106,6 +144,7 @@ func resourceComputeKeypairV2Read(d *schema.ResourceData, meta interface{}) erro
 	d.Set("name", kp.Name)
 	d.Set("public_key", kp.PublicKey)
 	d.Set("fingerprint", kp.Fingerprint)
+	d.Set("user_id", kp.UserID)
 	d.Set("region", GetRegion(d, config))
 
 	return nil
@@ -117,8 +156,15 @@ func resourceComputeKeypairV2Delete(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
 
-	err = keypairs.Delete(computeClient, d.Id()).ExtractErr()
+	// Check if the id includes a user_id
+	id, userID := extractComputeKeyPairNameAndUserID(d.Id())
+	opts := keypairs.DeleteOpts{
+		UserID: userID,
+	}
+
+	err = keypairs.Delete(computeClient, id, opts).ExtractErr()
 	if err != nil {
 		return CheckDeleted(d, err, "Error deleting openstack_compute_keypair_v2")
 	}
