@@ -84,15 +84,21 @@ func resourceComputeKeypairV2Create(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
 
 	name := d.Get("name").(string)
-	_, isForUser := d.GetOk("user_id")
 	createOpts := ComputeKeyPairV2CreateOpts{
 		keypairs.CreateOpts{
 			Name:      name,
 			PublicKey: d.Get("public_key").(string),
 		},
 		MapValueSpecs(d),
+	}
+
+	// Check if the private key is for a specific user and in case update the creation properties
+	userID, isForUser := d.GetOk("user_id")
+	if isForUser {
+		createOpts.CreateOpts.UserID = userID.(string)
 	}
 
 	log.Printf("[DEBUG] openstack_compute_keypair_v2 create options: %#v", createOpts)
@@ -120,11 +126,15 @@ func resourceComputeKeypairV2Read(d *schema.ResourceData, meta interface{}) erro
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
 
 	// Check if the id includes a user_id
 	id, userID := extractComputeKeyPairNameAndUserID(d.Id())
+	opts := keypairs.GetOpts{
+		UserID: userID,
+	}
 
-	kp, err := keypairs.GetWithUserID(computeClient, id, userID).Extract()
+	kp, err := keypairs.Get(computeClient, id, opts).Extract()
 	if err != nil {
 		return CheckDeleted(d, err, "Error retrieving openstack_compute_keypair_v2")
 	}
@@ -146,11 +156,15 @@ func resourceComputeKeypairV2Delete(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
 
 	// Check if the id includes a user_id
 	id, userID := extractComputeKeyPairNameAndUserID(d.Id())
+	opts := keypairs.DeleteOpts{
+		UserID: userID,
+	}
 
-	err = keypairs.DeleteWithUserID(computeClient, id, userID).ExtractErr()
+	err = keypairs.Delete(computeClient, id, opts).ExtractErr()
 	if err != nil {
 		return CheckDeleted(d, err, "Error deleting openstack_compute_keypair_v2")
 	}

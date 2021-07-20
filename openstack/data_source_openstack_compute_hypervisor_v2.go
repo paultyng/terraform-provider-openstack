@@ -62,7 +62,7 @@ func dataSourceComputeHypervisorV2Read(d *schema.ResourceData, meta interface{})
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
 
-	allPages, err := hypervisors.List(computeClient).AllPages()
+	allPages, err := hypervisors.List(computeClient, hypervisors.ListOpts{}).AllPages()
 	if err != nil {
 		return fmt.Errorf("Error listing compute hypervisors: %s", err)
 	}

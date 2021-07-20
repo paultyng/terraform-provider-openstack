@@ -50,10 +50,18 @@ func dataSourceComputeKeypairV2Read(d *schema.ResourceData, meta interface{}) er
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
+	computeClient.Microversion = computeV2KeyPairUserID
+
+	opts := keypairs.GetOpts{}
+
+	// Check if searching for the keypair of another user
+	userID, isForUserID := d.GetOk("user_id")
+	if isForUserID {
+		opts.UserID = userID.(string)
+	}
 
 	name := d.Get("name").(string)
-	userID := d.Get("user_id").(string)
-	kp, err := keypairs.GetWithUserID(computeClient, name, userID).Extract()
+	kp, err := keypairs.Get(computeClient, name, opts).Extract()
 	if err != nil {
 		return fmt.Errorf("Error retrieving openstack_compute_keypair_v2 %s: %s", name, err)
 	}
