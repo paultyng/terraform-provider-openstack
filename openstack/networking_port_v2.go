@@ -198,16 +198,16 @@ func expandNetworkingPortFixedIPToStringSlice(fixedIPs []ports.IP) []string {
 }
 
 func formatFixedIpsToSubnetIdsAndIPs(fixedIPs []ports.IP) []map[string]interface{} {
-	subnetIpPairs := make([]map[string]interface{}, len(fixedIPs))
+	subnetIPPairs := make([]map[string]interface{}, len(fixedIPs))
 
-	for i, subnetIpPair := range fixedIPs {
-		subnetIpPairs[i] = map[string]interface{}{
-			"subnet_id":  subnetIpPair.SubnetID,
-			"ip_address": subnetIpPair.IPAddress,
+	for i, subnetIPPair := range fixedIPs {
+		subnetIPPairs[i] = map[string]interface{}{
+			"subnet_id":  subnetIPPair.SubnetID,
+			"ip_address": subnetIPPair.IPAddress,
 		}
 	}
 
-	return subnetIpPairs
+	return subnetIPPairs
 }
 
 func flattenNetworkingPortBindingV2(port portExtended) interface{} {
