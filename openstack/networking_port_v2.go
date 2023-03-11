@@ -163,7 +163,7 @@ func expandNetworkingPortFixedIPV2(d *schema.ResourceData) []ports.IP {
 		return []ports.IP{}
 	}
 
-	rawIP := d.Get("fixed_ip").([]interface{})
+	rawIP := d.Get("fixed_ip").(*schema.Set).List()
 	if len(rawIP) == 0 {
 		return nil
 	}
@@ -186,7 +186,7 @@ func expandNetworkingPortFixedIPFilterV2(d *schema.ResourceData) []ports.FixedIP
 		}}
 	}
 
-	rawIP := d.Get("fixed_ips").([]interface{})
+	rawIP := d.Get("fixed_ips").(*schema.Set).List()
 	if len(rawIP) == 0 {
 		return nil
 	}
@@ -206,6 +206,14 @@ func resourceNetworkingPortV2AllowedAddressPairsHash(v interface{}) int {
 	var buf bytes.Buffer
 	m := v.(map[string]interface{})
 	buf.WriteString(fmt.Sprintf("%s-%s", m["ip_address"].(string), m["mac_address"].(string)))
+
+	return hashcode.String(buf.String())
+}
+
+func resourceNetworkingPortV2FixedIPsHash(v interface{}) int {
+	var buf bytes.Buffer
+	m := v.(map[string]interface{})
+	buf.WriteString(fmt.Sprintf("%s-%s", m["subnet_id"].(string), m["ip_address"].(string)))
 
 	return hashcode.String(buf.String())
 }

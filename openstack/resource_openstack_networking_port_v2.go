@@ -111,10 +111,11 @@ func resourceNetworkingPortV2() *schema.Resource {
 			},
 
 			"fixed_ip": {
-				Type:          schema.TypeList,
+				Type:          schema.TypeSet,
 				Optional:      true,
 				ForceNew:      false,
 				Computed:      true,
+				Set:           resourceNetworkingPortV2FixedIPsHash,
 				ConflictsWith: []string{"no_fixed_ip"},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{

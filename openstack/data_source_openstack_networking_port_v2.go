@@ -81,10 +81,11 @@ func dataSourceNetworkingPortV2() *schema.Resource {
 			},
 
 			"fixed_ips": {
-				Type:          schema.TypeList,
+				Type:          schema.TypeSet,
 				Optional:      true,
 				ForceNew:      true,
 				Computed:      true,
+				Set:           resourceNetworkingPortV2FixedIPsHash,
 				ConflictsWith: []string{"fixed_ip"},
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
