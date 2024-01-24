@@ -54,7 +54,7 @@ The following arguments are supported:
 
 * `size` - (Required) Specifies the volume size in GB. Changing this creates new instance.
 
-* `volume_type` - (Optional) Specifies the volume type to use. You can list the available volume types on your system by using the `cinder type- list` command. If you want to specify a volume type, you must also specify a volume size. Changing this creates new instance.
+* `volume_type` - (Optional) Specifies the volume type to use. If you want to specify a volume type, you must also specify a volume size. Changing this creates new instance.
 
 * `availability_zone` - (Optional) The availability zone of the instance.
 
