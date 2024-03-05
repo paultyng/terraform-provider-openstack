@@ -6,28 +6,24 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 )
 
-func TestAccDNSV2TransferAccept_importBasic(t *testing.T) {
-	zoneName := randomZoneName()
-	resourceName := "openstack_dns_transfer_request_v2.request_1"
-
+func TestAccIdentityV3RegisteredLimit_importBasic(t *testing.T) {
+	resourceName := "openstack_identity_registered_limit_v3.limit_1"
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			testAccPreCheckDNS(t)
-			testAccPreCheckNonAdminOnly(t)
+			testAccPreCheckSystemScopeAdmin(t)
 		},
 		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckIdentityV3RegisteredLimitDestroy,
 		Steps: []resource.TestStep{
 			{
-				Config: testAccDNSV2TransferAcceptBasic(zoneName),
+				Config: testAccIdentityV3RegisteredLimitBasic,
 			},
+
 			{
 				ResourceName:      resourceName,
 				ImportState:       true,
 				ImportStateVerify: true,
-				ImportStateVerifyIgnore: []string{
-					"disable_status_check",
-				},
 			},
 		},
 	})
