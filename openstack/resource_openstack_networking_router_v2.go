@@ -15,6 +15,9 @@ import (
 )
 
 const (
+	errExternalQosPolicyWithoutExternalNet = "setting external_qos_policy_id for openstack_networking_router_v2 " +
+		"requires external_network_id to be set"
+
 	errEnableSNATWithoutExternalNet = "setting enable_snat for openstack_networking_router_v2 " +
 		"requires external_network_id to be set"
 
@@ -219,6 +222,9 @@ func resourceNetworkingRouterV2Create(ctx context.Context, d *schema.ResourceDat
 	}
 
 	if v := d.Get("external_qos_policy_id").(string); v != "" {
+		if externalNetworkID == "" {
+			return diag.Errorf(errExternalQosPolicyWithoutExternalNet)
+		}
 		gatewayInfo.QoSPolicyID = v
 	}
 
@@ -419,9 +425,11 @@ func resourceNetworkingRouterV2Update(ctx context.Context, d *schema.ResourceDat
 	if d.HasChange("external_network_id") {
 		updateGatewaySettings = true
 	}
-
 	if d.HasChange("external_qos_policy_id") {
 		updateGatewaySettings = true
+		if externalNetworkID == "" {
+			return diag.Errorf(errExternalQosPolicyWithoutExternalNet)
+		}
 		gatewayInfo.QoSPolicyID = d.Get("external_qos_policy_id").(string)
 	}
 
