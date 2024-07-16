@@ -15,6 +15,9 @@ import (
 )
 
 const (
+	errExternalQosPolicyWithoutExternalNet = "setting external_qos_policy_id for openstack_networking_router_v2 " +
+		"requires external_network_id to be set"
+
 	errEnableSNATWithoutExternalNet = "setting enable_snat for openstack_networking_router_v2 " +
 		"requires external_network_id to be set"
 
@@ -75,6 +78,13 @@ func resourceNetworkingRouterV2() *schema.Resource {
 			},
 
 			"external_network_id": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: false,
+				Computed: true,
+			},
+
+			"external_qos_policy_id": {
 				Type:     schema.TypeString,
 				Optional: true,
 				ForceNew: false,
@@ -209,6 +219,13 @@ func resourceNetworkingRouterV2Create(ctx context.Context, d *schema.ResourceDat
 	if v := d.Get("external_network_id").(string); v != "" {
 		externalNetworkID = v
 		gatewayInfo.NetworkID = externalNetworkID
+	}
+
+	if v := d.Get("external_qos_policy_id").(string); v != "" {
+		if externalNetworkID == "" {
+			return diag.Errorf(errExternalQosPolicyWithoutExternalNet)
+		}
+		gatewayInfo.QoSPolicyID = v
 	}
 
 	if esRaw, ok := d.GetOkExists("enable_snat"); ok {
@@ -354,6 +371,7 @@ func resourceNetworkingRouterV2Read(ctx context.Context, d *schema.ResourceData,
 	// Gateway settings.
 	d.Set("external_network_id", r.GatewayInfo.NetworkID)
 	d.Set("enable_snat", r.GatewayInfo.EnableSNAT)
+	d.Set("external_qos_policy_id", r.GatewayInfo.QoSPolicyID)
 
 	externalFixedIPs := flattenNetworkingRouterExternalFixedIPsV2(r.GatewayInfo.ExternalFixedIPs)
 	if err = d.Set("external_fixed_ip", externalFixedIPs); err != nil {
@@ -406,6 +424,13 @@ func resourceNetworkingRouterV2Update(ctx context.Context, d *schema.ResourceDat
 
 	if d.HasChange("external_network_id") {
 		updateGatewaySettings = true
+	}
+	if d.HasChange("external_qos_policy_id") {
+		updateGatewaySettings = true
+		if externalNetworkID == "" {
+			return diag.Errorf(errExternalQosPolicyWithoutExternalNet)
+		}
+		gatewayInfo.QoSPolicyID = d.Get("external_qos_policy_id").(string)
 	}
 
 	if d.HasChange("enable_snat") {
