@@ -85,7 +85,10 @@ func testAccCheckDatabaseV1ConfigurationDestroy(s *terraform.State) error {
 		}
 
 		_, err := configurations.Get(DatabaseV1Client, rs.Primary.ID).Extract()
-		if err.Error() != "Resource not found" {
+		if err == nil {
+			return fmt.Errorf("Destroy check failed: resource exists")
+		}
+		if _, ok := err.(gophercloud.ErrDefault404); !ok {
 			return fmt.Errorf("Destroy check failed: %s", err)
 		}
 	}
