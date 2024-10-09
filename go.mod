@@ -15,6 +15,8 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
+replace github.com/gophercloud/utils/v2 => github.com/kayrus/utils/v2 v2.0.0-20241009194146-79bdfeb5fa97
+
 require (
 	github.com/ProtonMail/go-crypto v1.1.0-alpha.2 // indirect
 	github.com/agext/levenshtein v1.2.3 // indirect
