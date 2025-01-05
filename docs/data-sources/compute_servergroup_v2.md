@@ -33,6 +33,6 @@ following attributes are exported:
 * `user_id` - UserID of the server group.
 * `project_id` - ProjectID of the server group.
 * `policy` - Policy name to associate with the server group.
-* `rules` - Rules which are applied to specified policy.
-* `members` - The instances that are part of this server group.
-* `metadata` - Metadata of the server group.
+* `rules` - Map of rules which are applied to specified policy.
+* `members` - List of the instances that are part of this server group.
+* `metadata` - A map of metadata of the server group.
