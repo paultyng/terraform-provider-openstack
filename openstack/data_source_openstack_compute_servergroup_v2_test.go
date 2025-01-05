@@ -22,7 +22,7 @@ func TestAccComputeServerGroupV2DataSource(t *testing.T) {
 					testAccCheckComputeServerGroupV2DataSourceID("data.openstack_compute_servergroup_v2.server_group_1"),
 					resource.TestCheckResourceAttr("data.openstack_compute_servergroup_v2.server_group_1", "name", "my-servergroup"),
 					resource.TestCheckResourceAttr("data.openstack_compute_servergroup_v2.server_group_1", "policy", "anti-affinity"),
-					resource.TestCheckResourceAttr("data.openstack_compute_servergroup_v2.server_group_1", "metadata.this", "that"),
+					resource.TestCheckResourceAttr("data.openstack_compute_servergroup_v2.server_group_1", "value_specs.this", "that"),
 					resource.TestCheckResourceAttr("data.openstack_compute_servergroup_v2.server_group_1", "rules.max_server_per_host", "3"),
 				),
 			},
@@ -49,7 +49,7 @@ const testAccComputeServerGroupV2DataSourceBasic = `
 resource "openstack_compute_servergroup_v2" "server_group_1" {
   name     = "my-servergroup"
   policies = ["anti-affinity"]
-  metadata = {
+  value_specs = {
   	this   = "that"
   }
   rules {
