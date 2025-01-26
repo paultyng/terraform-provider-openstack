@@ -9,20 +9,22 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
+	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/members"
-	"github.com/gophercloud/utils/terraform/mutexkv"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/members"
+	"github.com/gophercloud/utils/v2/terraform/mutexkv"
 )
 
 func resourceImagesImageV2MemberStatusFromString(v string) images.ImageMemberStatus {
@@ -168,28 +170,10 @@ func resourceImagesImageV2File(client *gophercloud.ServiceClient, d *schema.Reso
 
 	decompress := d.Get("decompress").(bool)
 	if decompress {
-		// If we're here "Content-Encoding" in not filled, we'll read
-		// "Content-Type" to select format
-		switch resp.Header.Get("Content-Type") {
-		case "gzip", "application/gzip":
-			reader, err = gzip.NewReader(resp.Body)
-			if err != nil {
-				delFile()
-				return "", fmt.Errorf("Error decompressing gzip image: %s", err)
-			}
-		case "bzip2", "application/bzip2", "application/x-bzip2":
-			bz2Reader := bzip2.NewReader(resp.Body)
-			reader = io.NopCloser(bz2Reader)
-		case "xz", "application/xz", "application/x-xz":
-			xzReader, err := xz.NewReader(resp.Body)
-			if err != nil {
-				delFile()
-				return "", fmt.Errorf("Error decompressing xz image: %s", err)
-			}
-			reader = io.NopCloser(xzReader)
-		default:
+		reader, err = resourceImagesImageV2DetectCompression(resp)
+		if err != nil {
 			delFile()
-			return "", fmt.Errorf("Error decompressing image, format %s is not supported", resp.Header.Get("Content-Type"))
+			return "", err
 		}
 		defer reader.Close()
 	}
@@ -202,9 +186,55 @@ func resourceImagesImageV2File(client *gophercloud.ServiceClient, d *schema.Reso
 	return filename, nil
 }
 
-func resourceImagesImageV2RefreshFunc(client *gophercloud.ServiceClient, id string) resource.StateRefreshFunc {
+func resourceImagesImageV2DetectCompression(resp *http.Response) (io.ReadCloser, error) {
+	ct := resp.Header.Get("Content-Type")
+
+	// extract filename extension from "Content-Disposition" header
+	cd := resp.Header.Get("Content-Disposition")
+	_, p, _ := mime.ParseMediaType(cd)
+	ext := strings.Trim(filepath.Ext(p["filename"]), ".")
+
+	formats := []string{ct, ext}
+	for _, format := range formats {
+		switch format {
+		case "gz", "gzip", "application/gzip", "application/x-gzip":
+			reader, err := gzip.NewReader(resp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("Error decompressing gzip image: %s", err)
+			}
+			return reader, nil
+		case "bzip2", "application/bzip2", "application/x-bzip2":
+			bz2Reader := bzip2.NewReader(resp.Body)
+			return io.NopCloser(bz2Reader), nil
+		case "xz", "application/xz", "application/x-xz":
+			xzReader, err := xz.NewReader(resp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("Error decompressing xz image: %s", err)
+			}
+			return io.NopCloser(xzReader), nil
+		case "zst", "zstd", "application/zstd", "application/x-zstd":
+			zstdReader, err := zstd.NewReader(resp.Body)
+			if err != nil {
+				return nil, fmt.Errorf("Error decompressing zstd image: %s", err)
+			}
+			return zstdReader.IOReadCloser(), nil
+		case "application/octet-stream":
+			// This is a fallback for cases where the server does not provide
+			// a Content-Type header. In this case, we'll try to detect the
+			// compression based on the Content-Disposition header.
+		case "":
+			// This triggers the error at the end of the function.
+		default:
+			return nil, fmt.Errorf("Error decompressing image, format %s is not supported", format)
+		}
+	}
+
+	return nil, fmt.Errorf("Error decompressing image, detected %q formats are not supported", formats)
+}
+
+func resourceImagesImageV2RefreshFunc(ctx context.Context, client *gophercloud.ServiceClient, id string) retry.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		img, err := images.Get(client, id).Extract()
+		img, err := images.Get(ctx, client, id).Extract()
 		if err != nil {
 			return nil, "", err
 		}
@@ -284,20 +314,8 @@ func resourceImagesImageV2UpdateComputedAttributes(_ context.Context, diff *sche
 	return nil
 }
 
-func resourceImagesImageAccessV2ParseID(id string) (string, string, error) {
-	idParts := strings.Split(id, "/")
-	if len(idParts) < 2 {
-		return "", "", fmt.Errorf("Unable to determine image share access ID")
-	}
-
-	imageID := idParts[0]
-	memberID := idParts[1]
-
-	return imageID, memberID, nil
-}
-
-func resourceImagesImageAccessV2DetectMemberID(client *gophercloud.ServiceClient, imageID string) (string, error) {
-	allPages, err := members.List(client, imageID).AllPages()
+func resourceImagesImageAccessV2DetectMemberID(ctx context.Context, client *gophercloud.ServiceClient, imageID string) (string, error) {
+	allPages, err := members.List(client, imageID).AllPages(ctx)
 	if err != nil {
 		return "", fmt.Errorf("Unable to list image members: %s", err)
 	}
@@ -371,4 +389,43 @@ func imagesFilterByProperties(v []images.Image, p map[string]string) []images.Im
 	}
 
 	return result
+}
+
+// dataSourceValidateImageSortFilter checks that the sorting filter passed
+// by a user follows the glance API definition of "sort_key:sort_dir,sort_key:sort_dir:.."
+// where sort_dir is optional. For more details, check the glance api docs
+// https://docs.openstack.org/api-ref/image/v2/index.html#list-images
+// at the `sorting` section.
+func dataSourceValidateImageSortFilter(v interface{}, k string) (ws []string, errors []error) {
+	validSortKeys := []string{
+		"name",
+		"owner",
+		"protected",
+		"status",
+		"tag",
+		"visibility",
+		"container_format",
+		"disk_format",
+		"os_hidden",
+		"member_status",
+		"created_at",
+		"updated_at",
+	}
+	validSortDirections := []string{
+		"asc",
+		"desc",
+	}
+
+	sortPairs := strings.Split(v.(string), ",")
+	for _, sortPair := range sortPairs {
+		parts := strings.Split(sortPair, ":")
+		if !strSliceContains(validSortKeys, parts[0]) {
+			errors = append(errors, fmt.Errorf("Invalid sorting key: %s. Has to be one of: %+q", parts[0], validSortKeys))
+		}
+		if len(parts) > 1 && !strSliceContains(validSortDirections, parts[1]) {
+			errors = append(errors, fmt.Errorf("Invalid sorting direction: %s. Has to be one of: %+q", parts[0], validSortDirections))
+		}
+	}
+
+	return ws, errors
 }

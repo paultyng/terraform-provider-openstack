@@ -1,14 +1,15 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/qos/policies"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/qos/rules"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/qos/policies"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/qos/rules"
 )
 
 func TestAccNetworkingV2QoSDSCPMarkingRule_basic(t *testing.T) {
@@ -68,17 +69,17 @@ func testAccCheckNetworkingV2QoSDSCPMarkingRuleExists(n string, rule *rules.DSCP
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		networkingClient, err := config.NetworkingV2Client(osRegionName)
+		networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 		}
 
-		qosPolicyID, qosRuleID, err := resourceNetworkingQoSRuleV2ParseID(rs.Primary.ID)
+		qosPolicyID, qosRuleID, err := parsePairedIDs(rs.Primary.ID, "openstack_networking_qos_dscp_marking_rule_v2")
 		if err != nil {
-			return fmt.Errorf("Error reading openstack_networking_qos_dscp_marking_rule_v2 ID %s: %s", rs.Primary.ID, err)
+			return err
 		}
 
-		found, err := rules.GetDSCPMarkingRule(networkingClient, qosPolicyID, qosRuleID).ExtractDSCPMarkingRule()
+		found, err := rules.GetDSCPMarkingRule(context.TODO(), networkingClient, qosPolicyID, qosRuleID).ExtractDSCPMarkingRule()
 		if err != nil {
 			return err
 		}
@@ -97,7 +98,7 @@ func testAccCheckNetworkingV2QoSDSCPMarkingRuleExists(n string, rule *rules.DSCP
 
 func testAccCheckNetworkingV2QoSDSCPMarkingRuleDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	networkingClient, err := config.NetworkingV2Client(osRegionName)
+	networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -107,12 +108,12 @@ func testAccCheckNetworkingV2QoSDSCPMarkingRuleDestroy(s *terraform.State) error
 			continue
 		}
 
-		qosPolicyID, qosRuleID, err := resourceNetworkingQoSRuleV2ParseID(rs.Primary.ID)
+		qosPolicyID, qosRuleID, err := parsePairedIDs(rs.Primary.ID, "openstack_networking_qos_dscp_marking_rule_v2")
 		if err != nil {
-			return fmt.Errorf("Error reading openstack_networking_qos_dscp_marking_rule_v2 ID %s: %s", rs.Primary.ID, err)
+			return err
 		}
 
-		_, err = rules.GetDSCPMarkingRule(networkingClient, qosPolicyID, qosRuleID).ExtractDSCPMarkingRule()
+		_, err = rules.GetDSCPMarkingRule(context.TODO(), networkingClient, qosPolicyID, qosRuleID).ExtractDSCPMarkingRule()
 		if err == nil {
 			return fmt.Errorf("QoS rule still exists")
 		}

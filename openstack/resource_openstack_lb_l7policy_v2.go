@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/lbaas_v2/l7policies"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/lbaas_v2/listeners"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/lbaas_v2/pools"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/l7policies"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/listeners"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 )
 
 func resourceL7PolicyV2() *schema.Resource {
@@ -24,7 +24,7 @@ func resourceL7PolicyV2() *schema.Resource {
 		UpdateContext: resourceL7PolicyV2Update,
 		DeleteContext: resourceL7PolicyV2Delete,
 		Importer: &schema.ResourceImporter{
-			State: resourceL7PolicyV2Import,
+			StateContext: resourceL7PolicyV2Import,
 		},
 
 		Timeouts: &schema.ResourceTimeout{
@@ -63,6 +63,7 @@ func resourceL7PolicyV2() *schema.Resource {
 				Required: true,
 				ValidateFunc: validation.StringInSlice([]string{
 					"REDIRECT_TO_POOL", "REDIRECT_TO_URL", "REJECT",
+					"REDIRECT_PREFIX",
 				}, true),
 			},
 
@@ -78,15 +79,21 @@ func resourceL7PolicyV2() *schema.Resource {
 				Computed: true,
 			},
 
+			"redirect_prefix": {
+				Type:          schema.TypeString,
+				ConflictsWith: []string{"redirect_url", "redirect_pool_id"},
+				Optional:      true,
+			},
+
 			"redirect_pool_id": {
 				Type:          schema.TypeString,
-				ConflictsWith: []string{"redirect_url"},
+				ConflictsWith: []string{"redirect_url", "redirect_prefix"},
 				Optional:      true,
 			},
 
 			"redirect_url": {
 				Type:          schema.TypeString,
-				ConflictsWith: []string{"redirect_pool_id"},
+				ConflictsWith: []string{"redirect_pool_id", "redirect_prefix"},
 				Optional:      true,
 				ValidateFunc: func(v interface{}, k string) (ws []string, errors []error) {
 					value := v.(string)
@@ -96,6 +103,14 @@ func resourceL7PolicyV2() *schema.Resource {
 					}
 					return
 				},
+			},
+
+			"redirect_http_code": {
+				Type:          schema.TypeInt,
+				ConflictsWith: []string{"redirect_url", "redirect_pool_id"},
+				Optional:      true,
+				Computed:      true,
+				ValidateFunc:  validation.IntInSlice([]int{301, 302, 303, 307, 308}),
 			},
 
 			"admin_state_up": {
@@ -109,7 +124,7 @@ func resourceL7PolicyV2() *schema.Resource {
 
 func resourceL7PolicyV2Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	lbClient, err := chooseLBV2Client(d, config)
+	lbClient, err := config.LoadBalancerV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -119,23 +134,28 @@ func resourceL7PolicyV2Create(ctx context.Context, d *schema.ResourceData, meta 
 	action := d.Get("action").(string)
 	redirectPoolID := d.Get("redirect_pool_id").(string)
 	redirectURL := d.Get("redirect_url").(string)
+	redirectPrefix := d.Get("redirect_prefix").(string)
+	redirectHTTPCodeInt := d.Get("redirect_http_code").(int)
+	redirectHTTPCode := int32(redirectHTTPCodeInt)
 
 	// Ensure the right combination of options have been specified.
-	err = checkL7PolicyAction(action, redirectURL, redirectPoolID)
+	err = checkL7PolicyAction(action, redirectURL, redirectPoolID, redirectPrefix)
 	if err != nil {
 		return diag.Errorf("Unable to create L7 Policy: %s", err)
 	}
 
 	adminStateUp := d.Get("admin_state_up").(bool)
 	createOpts := l7policies.CreateOpts{
-		TenantID:       d.Get("tenant_id").(string),
-		Name:           d.Get("name").(string),
-		Description:    d.Get("description").(string),
-		Action:         l7policies.Action(action),
-		ListenerID:     listenerID,
-		RedirectPoolID: redirectPoolID,
-		RedirectURL:    redirectURL,
-		AdminStateUp:   &adminStateUp,
+		ProjectID:        d.Get("tenant_id").(string),
+		Name:             d.Get("name").(string),
+		Description:      d.Get("description").(string),
+		Action:           l7policies.Action(action),
+		ListenerID:       listenerID,
+		RedirectPoolID:   redirectPoolID,
+		RedirectURL:      redirectURL,
+		RedirectPrefix:   redirectPrefix,
+		RedirectHttpCode: redirectHTTPCode,
+		AdminStateUp:     &adminStateUp,
 	}
 
 	if v, ok := d.GetOk("position"); ok {
@@ -148,7 +168,7 @@ func resourceL7PolicyV2Create(ctx context.Context, d *schema.ResourceData, meta 
 
 	// Make sure the associated pool is active before proceeding.
 	if redirectPoolID != "" {
-		pool, err := pools.Get(lbClient, redirectPoolID).Extract()
+		pool, err := pools.Get(ctx, lbClient, redirectPoolID).Extract()
 		if err != nil {
 			return diag.Errorf("Unable to retrieve %s: %s", redirectPoolID, err)
 		}
@@ -160,7 +180,7 @@ func resourceL7PolicyV2Create(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	// Get a clean copy of the parent listener.
-	parentListener, err := listeners.Get(lbClient, listenerID).Extract()
+	parentListener, err := listeners.Get(ctx, lbClient, listenerID).Extract()
 	if err != nil {
 		return diag.Errorf("Unable to retrieve listener %s: %s", listenerID, err)
 	}
@@ -173,8 +193,8 @@ func resourceL7PolicyV2Create(ctx context.Context, d *schema.ResourceData, meta 
 
 	log.Printf("[DEBUG] Attempting to create L7 Policy")
 	var l7Policy *l7policies.L7Policy
-	err = resource.RetryContext(ctx, timeout, func() *resource.RetryError {
-		l7Policy, err = l7policies.Create(lbClient, createOpts).Extract()
+	err = retry.RetryContext(ctx, timeout, func() *retry.RetryError {
+		l7Policy, err = l7policies.Create(ctx, lbClient, createOpts).Extract()
 		if err != nil {
 			return checkForRetryableError(err)
 		}
@@ -198,12 +218,12 @@ func resourceL7PolicyV2Create(ctx context.Context, d *schema.ResourceData, meta 
 
 func resourceL7PolicyV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	lbClient, err := chooseLBV2Client(d, config)
+	lbClient, err := config.LoadBalancerV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
 
-	l7Policy, err := l7policies.Get(lbClient, d.Id()).Extract()
+	l7Policy, err := l7policies.Get(ctx, lbClient, d.Id()).Extract()
 	if err != nil {
 		return diag.FromErr(CheckDeleted(d, err, "L7 Policy"))
 	}
@@ -212,11 +232,13 @@ func resourceL7PolicyV2Read(ctx context.Context, d *schema.ResourceData, meta in
 
 	d.Set("action", l7Policy.Action)
 	d.Set("description", l7Policy.Description)
-	d.Set("tenant_id", l7Policy.TenantID)
+	d.Set("tenant_id", l7Policy.ProjectID)
 	d.Set("name", l7Policy.Name)
 	d.Set("position", int(l7Policy.Position))
 	d.Set("redirect_url", l7Policy.RedirectURL)
 	d.Set("redirect_pool_id", l7Policy.RedirectPoolID)
+	d.Set("redirect_prefix", l7Policy.RedirectPrefix)
+	d.Set("redirect_http_code", l7Policy.RedirectHttpCode)
 	d.Set("region", GetRegion(d, config))
 	d.Set("admin_state_up", l7Policy.AdminStateUp)
 
@@ -225,7 +247,7 @@ func resourceL7PolicyV2Read(ctx context.Context, d *schema.ResourceData, meta in
 
 func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	lbClient, err := chooseLBV2Client(d, config)
+	lbClient, err := config.LoadBalancerV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -235,6 +257,9 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 	action := d.Get("action").(string)
 	redirectPoolID := d.Get("redirect_pool_id").(string)
 	redirectURL := d.Get("redirect_url").(string)
+	redirectPrefix := d.Get("redirect_prefix").(string)
+	redirectHTTPCodeInt := d.Get("redirect_http_code").(int)
+	redirectHTTPCode := int32(redirectHTTPCodeInt)
 
 	var updateOpts l7policies.UpdateOpts
 
@@ -250,13 +275,16 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 		updateOpts.Description = &description
 	}
 	if d.HasChange("redirect_pool_id") {
-		redirectPoolID = d.Get("redirect_pool_id").(string)
-
 		updateOpts.RedirectPoolID = &redirectPoolID
 	}
 	if d.HasChange("redirect_url") {
-		redirectURL = d.Get("redirect_url").(string)
 		updateOpts.RedirectURL = &redirectURL
+	}
+	if d.HasChange("redirect_prefix") {
+		updateOpts.RedirectPrefix = &redirectPrefix
+	}
+	if d.HasChange("redirect_http_code") {
+		updateOpts.RedirectHttpCode = redirectHTTPCode
 	}
 	if d.HasChange("position") {
 		updateOpts.Position = int32(d.Get("position").(int))
@@ -267,7 +295,7 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	// Ensure the right combination of options have been specified.
-	err = checkL7PolicyAction(action, redirectURL, redirectPoolID)
+	err = checkL7PolicyAction(action, redirectURL, redirectPoolID, redirectPrefix)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -275,7 +303,7 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 	// Make sure the pool is active before continuing.
 	timeout := d.Timeout(schema.TimeoutUpdate)
 	if redirectPoolID != "" {
-		pool, err := pools.Get(lbClient, redirectPoolID).Extract()
+		pool, err := pools.Get(ctx, lbClient, redirectPoolID).Extract()
 		if err != nil {
 			return diag.Errorf("Unable to retrieve %s: %s", redirectPoolID, err)
 		}
@@ -287,13 +315,13 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	// Get a clean copy of the parent listener.
-	parentListener, err := listeners.Get(lbClient, listenerID).Extract()
+	parentListener, err := listeners.Get(ctx, lbClient, listenerID).Extract()
 	if err != nil {
 		return diag.Errorf("Unable to retrieve parent listener %s: %s", listenerID, err)
 	}
 
 	// Get a clean copy of the L7 Policy.
-	l7Policy, err := l7policies.Get(lbClient, d.Id()).Extract()
+	l7Policy, err := l7policies.Get(ctx, lbClient, d.Id()).Extract()
 	if err != nil {
 		return diag.Errorf("Unable to retrieve L7 Policy: %s: %s", d.Id(), err)
 	}
@@ -311,8 +339,8 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	log.Printf("[DEBUG] Updating L7 Policy %s with options: %#v", d.Id(), updateOpts)
-	err = resource.Retry(timeout, func() *resource.RetryError {
-		_, err = l7policies.Update(lbClient, d.Id(), updateOpts).Extract()
+	err = retry.RetryContext(ctx, timeout, func() *retry.RetryError {
+		_, err = l7policies.Update(ctx, lbClient, d.Id(), updateOpts).Extract()
 		if err != nil {
 			return checkForRetryableError(err)
 		}
@@ -334,7 +362,7 @@ func resourceL7PolicyV2Update(ctx context.Context, d *schema.ResourceData, meta 
 
 func resourceL7PolicyV2Delete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	lbClient, err := chooseLBV2Client(d, config)
+	lbClient, err := config.LoadBalancerV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -343,13 +371,13 @@ func resourceL7PolicyV2Delete(ctx context.Context, d *schema.ResourceData, meta 
 	listenerID := d.Get("listener_id").(string)
 
 	// Get a clean copy of the listener.
-	listener, err := listeners.Get(lbClient, listenerID).Extract()
+	listener, err := listeners.Get(ctx, lbClient, listenerID).Extract()
 	if err != nil {
 		return diag.Errorf("Unable to retrieve parent listener (%s) for the L7 Policy: %s", listenerID, err)
 	}
 
 	// Get a clean copy of the L7 Policy.
-	l7Policy, err := l7policies.Get(lbClient, d.Id()).Extract()
+	l7Policy, err := l7policies.Get(ctx, lbClient, d.Id()).Extract()
 	if err != nil {
 		return diag.FromErr(CheckDeleted(d, err, "Unable to retrieve L7 Policy"))
 	}
@@ -361,8 +389,8 @@ func resourceL7PolicyV2Delete(ctx context.Context, d *schema.ResourceData, meta 
 	}
 
 	log.Printf("[DEBUG] Attempting to delete L7 Policy %s", d.Id())
-	err = resource.Retry(timeout, func() *resource.RetryError {
-		err = l7policies.Delete(lbClient, d.Id()).ExtractErr()
+	err = retry.RetryContext(ctx, timeout, func() *retry.RetryError {
+		err = l7policies.Delete(ctx, lbClient, d.Id()).ExtractErr()
 		if err != nil {
 			return checkForRetryableError(err)
 		}
@@ -381,14 +409,14 @@ func resourceL7PolicyV2Delete(ctx context.Context, d *schema.ResourceData, meta 
 	return nil
 }
 
-func resourceL7PolicyV2Import(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+func resourceL7PolicyV2Import(ctx context.Context, d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
 	config := meta.(*Config)
-	lbClient, err := chooseLBV2Client(d, config)
+	lbClient, err := config.LoadBalancerV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return nil, fmt.Errorf("Error creating OpenStack networking client: %s", err)
 	}
 
-	l7Policy, err := l7policies.Get(lbClient, d.Id()).Extract()
+	l7Policy, err := l7policies.Get(ctx, lbClient, d.Id()).Extract()
 	if err != nil {
 		return nil, CheckDeleted(d, err, "L7 Policy")
 	}
@@ -399,7 +427,7 @@ func resourceL7PolicyV2Import(d *schema.ResourceData, meta interface{}) ([]*sche
 		d.Set("listener_id", l7Policy.ListenerID)
 	} else {
 		// Fallback for the Neutron LBaaSv2 extension
-		listenerID, err := getListenerIDForL7Policy(lbClient, d.Id())
+		listenerID, err := getListenerIDForL7Policy(ctx, lbClient, d.Id())
 		if err != nil {
 			return nil, err
 		}
@@ -409,20 +437,24 @@ func resourceL7PolicyV2Import(d *schema.ResourceData, meta interface{}) ([]*sche
 	return []*schema.ResourceData{d}, nil
 }
 
-func checkL7PolicyAction(action, redirectURL, redirectPoolID string) error {
+func checkL7PolicyAction(action, redirectURL, redirectPoolID, redirectPrefix string) error {
 	if action == "REJECT" {
-		if redirectURL != "" || redirectPoolID != "" {
+		if redirectURL != "" || redirectPoolID != "" || redirectPrefix != "" {
 			return fmt.Errorf(
-				"redirect_url and redirect_pool_id must be empty when action is set to %s", action)
+				"redirect_url/pool_id/prefix must be empty when action is set to %s", action)
 		}
 	}
 
-	if action == "REDIRECT_TO_POOL" && redirectURL != "" {
-		return fmt.Errorf("redirect_url must be empty when action is set to %s", action)
+	if action == "REDIRECT_TO_POOL" && (redirectURL != "" || redirectPrefix != "") {
+		return fmt.Errorf("redirect_url/prefix must be empty when action is set to %s", action)
 	}
 
-	if action == "REDIRECT_TO_URL" && redirectPoolID != "" {
-		return fmt.Errorf("redirect_pool_id must be empty when action is set to %s", action)
+	if action == "REDIRECT_TO_URL" && (redirectPoolID != "" || redirectPrefix != "") {
+		return fmt.Errorf("redirect_pool_id/prefix must be empty when action is set to %s", action)
+	}
+
+	if action == "REDIRECT_TO_PREFIX" && (redirectPoolID != "" || redirectURL != "") {
+		return fmt.Errorf("redirect_pool_id/url must be empty when action is set to %s", action)
 	}
 
 	return nil

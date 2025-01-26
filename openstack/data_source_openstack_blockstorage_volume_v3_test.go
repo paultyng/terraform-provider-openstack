@@ -1,16 +1,20 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"os"
+	"regexp"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/acctest"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 )
 
 func TestAccBlockStorageV3VolumeDataSource_basic(t *testing.T) {
@@ -40,7 +44,6 @@ func TestAccBlockStorageV3VolumeDataSource_basic(t *testing.T) {
 					testAccCheckBlockStorageV3VolumeDataSourceID(resourceName, volumeID),
 					resource.TestCheckResourceAttr(resourceName, "name", volumeName),
 					resource.TestCheckResourceAttr(resourceName, "size", "1"),
-					resource.TestCheckResourceAttr(resourceName, "multiattach", "false"),
 				),
 			},
 		},
@@ -53,7 +56,7 @@ func testAccBlockStorageV3CreateVolume(volumeName string) (string, error) {
 		return "", err
 	}
 
-	bsClient, err := config.BlockStorageV3Client(osRegionName)
+	bsClient, err := config.BlockStorageV3Client(context.TODO(), osRegionName)
 	if err != nil {
 		return "", err
 	}
@@ -63,12 +66,14 @@ func testAccBlockStorageV3CreateVolume(volumeName string) (string, error) {
 		Name: volumeName,
 	}
 
-	volume, err := volumes.Create(bsClient, volCreateOpts).Extract()
+	volume, err := volumes.Create(context.TODO(), bsClient, volCreateOpts, nil).Extract()
 	if err != nil {
 		return "", err
 	}
 
-	err = volumes.WaitForStatus(bsClient, volume.ID, "available", 60)
+	ctx, cancel := context.WithTimeout(context.TODO(), 60*time.Second)
+	defer cancel()
+	err = volumes.WaitForStatus(ctx, bsClient, volume.ID, "available")
 	if err != nil {
 		return "", err
 	}
@@ -82,19 +87,21 @@ func testAccBlockStorageV3DeleteVolume(t *testing.T, volumeID string) {
 		t.Fatal(err)
 	}
 
-	bsClient, err := config.BlockStorageV3Client(osRegionName)
+	bsClient, err := config.BlockStorageV3Client(context.TODO(), osRegionName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = volumes.Delete(bsClient, volumeID, nil).ExtractErr()
+	err = volumes.Delete(context.TODO(), bsClient, volumeID, nil).ExtractErr()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	err = volumes.WaitForStatus(bsClient, volumeID, "DELETED", 60)
+	ctx, cancel := context.WithTimeout(context.TODO(), 60*time.Second)
+	defer cancel()
+	err = volumes.WaitForStatus(ctx, bsClient, volumeID, "DELETED")
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); !ok {
+		if !gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			t.Fatal(err)
 		}
 	}
@@ -121,4 +128,55 @@ func testAccBlockStorageV3VolumeDataSourceBasic(snapshotName string) string {
       name = "%s"
     }
   `, snapshotName)
+}
+
+func TestAccBlockStorageV3VolumeDataSource_attachment(t *testing.T) {
+	var dataVolume volumes.Volume
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckBlockStorageV3VolumeDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBlockStorageV3VolumeDataSourceAttachment(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckBlockStorageV3VolumeExists("data.openstack_blockstorage_volume_v3.volume_1", &dataVolume),
+					resource.TestCheckResourceAttrPair("data.openstack_blockstorage_volume_v3.volume_1", "attachment", "openstack_blockstorage_volume_v3.volume_1", "attachment"),
+					testAccCheckBlockStorageV3VolumeAttachment(&dataVolume, *regexp.MustCompile(`\/dev\/.dc`)),
+				),
+			},
+		},
+	})
+}
+
+func testAccBlockStorageV3VolumeDataSourceAttachment() string {
+	return fmt.Sprintf(`
+resource "openstack_blockstorage_volume_v3" "volume_1" {
+  name = "volume_1"
+  size = 1
+}
+
+resource "openstack_compute_instance_v2" "instance_1" {
+  name = "instance_1"
+  security_groups = ["default"]
+  network {
+    uuid = "%s"
+  }
+}
+
+resource "openstack_compute_volume_attach_v2" "va_1" {
+  instance_id = "${openstack_compute_instance_v2.instance_1.id}"
+  volume_id = "${openstack_blockstorage_volume_v3.volume_1.id}"
+  device = "/dev/vdc"
+}
+
+data "openstack_blockstorage_volume_v3" "volume_1" {
+  name = "volume_1"
+  depends_on = [ openstack_compute_volume_attach_v2.va_1 ]
+}
+`, osNetworkID)
 }

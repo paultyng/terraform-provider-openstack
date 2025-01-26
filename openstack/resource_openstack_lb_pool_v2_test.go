@@ -1,13 +1,14 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/lbaas_v2/pools"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 )
 
 func TestAccLBV2Pool_basic(t *testing.T) {
@@ -26,16 +27,105 @@ func TestAccLBV2Pool_basic(t *testing.T) {
 				Config: TestAccLbV2PoolConfigBasic,
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckLBV2PoolExists("openstack_lb_pool_v2.pool_1", &pool),
+					testAccCheckLBV2PoolHasTag("openstack_lb_pool_v2.pool_1", "foo"),
+					testAccCheckLBV2PoolTagCount("openstack_lb_pool_v2.pool_1", 1),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "persistence.#", "1"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "persistence.0.type", "APP_COOKIE"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "persistence.0.cookie_name", "testCookie"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "tls_enabled", "true"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "tls_versions.#", "1"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "alpn_protocols.#", "1"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "tls_ciphers", "TLS13-CHACHA20-POLY1305-SHA256"),
 				),
 			},
 			{
 				Config: TestAccLbV2PoolConfigUpdate,
 				Check: resource.ComposeTestCheckFunc(
 					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "name", "pool_1_updated"),
+					testAccCheckLBV2PoolHasTag("openstack_lb_pool_v2.pool_1", "bar"),
+					testAccCheckLBV2PoolTagCount("openstack_lb_pool_v2.pool_1", 1),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "persistence.#", "0"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "tls_enabled", "false"),
+					// tls_versions reset to Octavia default value
+					// resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "tls_versions.#", "0"),
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "alpn_protocols.#", "0"),
+					// even though we unset this value, it should still be present in the state
+					// because it is a computed field
+					resource.TestCheckResourceAttr("openstack_lb_pool_v2.pool_1", "tls_ciphers", "TLS13-CHACHA20-POLY1305-SHA256"),
 				),
 			},
 		},
 	})
+}
+
+func testAccCheckLBV2PoolHasTag(n, tag string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No ID is set")
+		}
+
+		config := testAccProvider.Meta().(*Config)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
+		if err != nil {
+			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
+		}
+
+		found, err := pools.Get(context.TODO(), lbClient, rs.Primary.ID).Extract()
+		if err != nil {
+			return err
+		}
+
+		if found.ID != rs.Primary.ID {
+			return fmt.Errorf("Pool not found")
+		}
+
+		for _, v := range found.Tags {
+			if tag == v {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("Tag not found: %s", tag)
+	}
+}
+
+func testAccCheckLBV2PoolTagCount(n string, expected int) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No ID is set")
+		}
+
+		config := testAccProvider.Meta().(*Config)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
+		if err != nil {
+			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
+		}
+
+		found, err := pools.Get(context.TODO(), lbClient, rs.Primary.ID).Extract()
+		if err != nil {
+			return err
+		}
+
+		if found.ID != rs.Primary.ID {
+			return fmt.Errorf("Pool not found")
+		}
+
+		if len(found.Tags) != expected {
+			return fmt.Errorf("Expecting %d tags, found %d", expected, len(found.Tags))
+		}
+
+		return nil
+	}
 }
 
 func TestAccLBV2Pool_octavia_udp(t *testing.T) {
@@ -46,7 +136,6 @@ func TestAccLBV2Pool_octavia_udp(t *testing.T) {
 			testAccPreCheck(t)
 			testAccPreCheckNonAdminOnly(t)
 			testAccPreCheckLB(t)
-			testAccPreCheckUseOctavia(t)
 		},
 		ProviderFactories: testAccProviders,
 		CheckDestroy:      testAccCheckLBV2PoolDestroy,
@@ -64,7 +153,7 @@ func TestAccLBV2Pool_octavia_udp(t *testing.T) {
 
 func testAccCheckLBV2PoolDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	lbClient, err := chooseLBV2AccTestClient(config, osRegionName)
+	lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
 	}
@@ -74,7 +163,7 @@ func testAccCheckLBV2PoolDestroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := pools.Get(lbClient, rs.Primary.ID).Extract()
+		_, err := pools.Get(context.TODO(), lbClient, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("Pool still exists: %s", rs.Primary.ID)
 		}
@@ -95,12 +184,12 @@ func testAccCheckLBV2PoolExists(n string, pool *pools.Pool) resource.TestCheckFu
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		lbClient, err := chooseLBV2AccTestClient(config, osRegionName)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
 		}
 
-		found, err := pools.Get(lbClient, rs.Primary.ID).Extract()
+		found, err := pools.Get(context.TODO(), lbClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -151,6 +240,17 @@ resource "openstack_lb_pool_v2" "pool_1" {
   protocol = "HTTP"
   lb_method = "ROUND_ROBIN"
   listener_id = "${openstack_lb_listener_v2.listener_1.id}"
+  tags = ["foo"]
+
+  tls_enabled    = true
+  tls_versions   = ["TLSv1.2"]
+  alpn_protocols = ["http/1.1"]
+  tls_ciphers    = "TLS13-CHACHA20-POLY1305-SHA256"
+
+  persistence {
+    type        = "APP_COOKIE"
+    cookie_name = "testCookie"
+  }
 
   timeouts {
     create = "5m"
@@ -197,6 +297,9 @@ resource "openstack_lb_pool_v2" "pool_1" {
   lb_method = "LEAST_CONNECTIONS"
   admin_state_up = "true"
   listener_id = "${openstack_lb_listener_v2.listener_1.id}"
+  tags = ["bar"]
+
+  alpn_protocols = []
 
   timeouts {
     create = "5m"

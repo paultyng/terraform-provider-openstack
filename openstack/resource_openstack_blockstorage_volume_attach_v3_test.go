@@ -1,14 +1,16 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 )
 
 func TestAccBlockStorageVolumeAttachV3_basic(t *testing.T) {
@@ -55,7 +57,7 @@ func TestAccBlockStorageVolumeAttachV3_timeout(t *testing.T) {
 
 func testAccCheckBlockStorageVolumeAttachV3Destroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	client, err := config.BlockStorageV3Client(osRegionName)
+	client, err := config.BlockStorageV3Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack block storage client: %s", err)
 	}
@@ -65,14 +67,14 @@ func testAccCheckBlockStorageVolumeAttachV3Destroy(s *terraform.State) error {
 			continue
 		}
 
-		volumeID, attachmentID, err := blockStorageVolumeAttachV3ParseID(rs.Primary.ID)
+		volumeID, attachmentID, err := parsePairedIDs(rs.Primary.ID, "openstack_blockstorage_volume_attach_v3")
 		if err != nil {
 			return err
 		}
 
-		volume, err := volumes.Get(client, volumeID).Extract()
+		volume, err := volumes.Get(context.TODO(), client, volumeID).Extract()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault404); ok {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return nil
 			}
 			return err
@@ -100,17 +102,17 @@ func testAccCheckBlockStorageVolumeAttachV3Exists(n string, va *volumes.Attachme
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		client, err := config.BlockStorageV3Client(osRegionName)
+		client, err := config.BlockStorageV3Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack block storage client: %s", err)
 		}
 
-		volumeID, attachmentID, err := blockStorageVolumeAttachV3ParseID(rs.Primary.ID)
+		volumeID, attachmentID, err := parsePairedIDs(rs.Primary.ID, "openstack_blockstorage_volume_attach_v3")
 		if err != nil {
 			return err
 		}
 
-		volume, err := volumes.Get(client, volumeID).Extract()
+		volume, err := volumes.Get(context.TODO(), client, volumeID).Extract()
 		if err != nil {
 			return err
 		}

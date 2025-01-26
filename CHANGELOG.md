@@ -1,8 +1,158 @@
-## 1.54.0 ( Not released yet)
+## 3.0.0 ( 25 September, 2024 )
 
 NOTES
 
-* Added deprecation notice for `multiattach` on `openstack_blockstorage_volume_v3` ([#1629](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1629))
+* This is a major release that removes deprecated resources and data sources. Please follow the [upgrade guide](docs/guides/upgrade-guide-version-3.md) to avoid issues.
+* Upgraded Gophercloud to v2 ([#1747](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1747))
+* Updated Golang to 1.22 ([#1747](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1747))
+
+BREAKING CHANGES
+
+* Removed the deprecated `openstack_blockstorage_snapshot_v2` data source ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_blockstorage_volume_v2` data source ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_fw_policy_v1` data source ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_blockstorage_quotaset_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_blockstorage_volume_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_blockstorage_volume_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_blockstorage_volume_attach_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_compute_secgroup_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_compute_floatingip_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_compute_floatingip_associate_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_fw_firewall_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_fw_policy_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_fw_rule_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_lb_member_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_lb_monitor_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_lb_pool_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed the deprecated `openstack_lb_vip_v1` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed support for the `OS_NOVA_NETWORK` environment variable from the `openstack_compute_instance_v2` resource ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+
+IMPROVEMENTS
+
+* Added the ability to set any protocol in the `openstack_networking_secgroup_rule_v2` resource ([#1765](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1765))
+* Added support for the `pause` `power_state` in the `openstack_compute_instance_v2` resource ([#1667](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1667))
+* Added support for the `pause` `power_state` in the `openstack_compute_instance_v2` data source ([#1667](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1667))
+* Added the ability to import the `openstack_dns_recordset_v2` resource state from tenant projects ([#1778](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1778))
+* Added a new `openstack_identity_project_ids_v3` data source ([#1779](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1779))
+* Added new `key` and `digest` arguments to the `openstack_objectstorage_tempurl_v1` resource ([#1782](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1782))
+* Added a new `master_lb_enabled` argument to the `openstack_containerinfra_cluster_v1` resource ([#1767](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1767))
+* Added a new `master_lb_enabled` argument to the `openstack_containerinfra_cluster_v1` data source ([#1767](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1767))
+* Added new `domain_name` and `http_version` arguments to the `openstack_lb_monitor_v2` resource ([#1786](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1786))
+* Added a new `openstack_objectstorage_account_v1` resource ([#1781](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1781))
+* Added new TLS-related arguments to the `openstack_lb_listener_v2` resource ([#1785](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1785))
+* Added new TLS-related arguments to the `openstack_lb_pool_v2` resource ([#1785](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1785))
+* Added a new `openstack_lb_flavorprofile_v2` resource ([#1716](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1716))
+
+BUG FIXES
+
+* Fixed a bug where a domain could not be deleted until it was disabled in the `openstack_identity_project_v3` resource ([#1770](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1770))
+* Fixed a bug where `persistence` could not be removed from the `openstack_lb_pool_v2` resource ([#1785](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1785))
+
+## 2.1.0 ( 22 July, 2024 )
+
+NOTES
+
+* The next major release will be `3.0.0` and will include the removal of the deprecated resources and data sources ([#1751](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1751))
+* Removed deprecated `terraform-plugin-sdk` dependency elements ([#1759](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1759))
+* Introduced a `parsePairedIDs` helper function to parse paired IDs from a string and removed duplicated code ([#1756](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1756))
+
+IMPROVEMENTS
+
+* Added `vip_qos_policy_id` on `openstack_lb_loadbalancer_v2` ([#1721](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1721))
+* Added support for `SCTP` type on `openstack_lb_monitor_v2` ([#1723](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1723))
+* Added support for `redirect_prefix` on `openstack_lb_l7_policy_v2` ([#1717](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1717))
+* Added support for `redirect_http_code` on `openstack_lb_l7_policy_v2` ([#1717](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1717))
+* Added support for `tags` on `openstack_lb_member_v2` ([#1726](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1726))
+* Added support for `tags` on `openstack_lb_pool_v2` ([#1725](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1725))
+* Added validations on `openstack_lb_monitor_v2` ([#1724](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1724))
+* Added support for new `SSL_CONN_HAS_CERT`, `SSL_VERIFY_RESULT` and `SSL_DN_FIELD` types in the `openstack_lb_l7_rule_v2` resource ([#1722](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1722))
+* Added support for a new "build" `power_status` in the `openstack_compute_instance_v2` resource ([#1691](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1691))
+* Deleted URL validation in the `openstack_identity_endpoint_v3` resource ([#1701](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1701))
+* Allow empty `subnet_id` in the `fixed_ip` block of the `openstack_networking_port_v2` resource ([#962](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/962))
+* Added new image formats in the `openstack_images_image_v2` resource ([#1752](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1752))
+* Added a new `dns_publish_fixed_ip` argument to the `openstack_networking_subnet_v2` resource ([#1748](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1748))
+* Added a new `dns_publish_fixed_ip` argument to the `openstack_networking_subnet_v2` and `openstack_networking_subnet_ids_v2` data sources ([#1748](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1748))
+* Added a new compression format detection based on the filename extension from the `Content-Disposition` response header in the `openstack_images_image_v2` resource([#1746](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1746))
+* Enforce boolean type in JSON requests for "true" or "false" values in the `value_specs` map in networking resources ([#1743](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1743))
+* Added a new `zstd` compression format support in the `openstack_images_image_v2` resource ([#1746](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1746))
+* Added a support for the `description` argument in the `openstack_networking_portforwarding_v2` resource ([#1742](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1742))
+* Added new `container_format` and `disk_format` arguments in the `openstack_images_image_v2` data source ([#1753](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1753))
+* Added new `container_format`, `disk_format` and `hidden` arguments in the `openstack_images_image_ids_v2` data source ([#1753](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1753))
+* Added a new `openstack_bgpvpn_v2` resource ([#1738](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1738))
+* Added a new `openstack_bgpvpn_router_associate_v2` resource ([#1738](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1738))
+* Added a new `openstack_bgpvpn_network_associate_v2` resource ([#1738](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1738))
+* Added a new `openstack_bgpvpn_port_associate_v2` resource ([#1738](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1738))
+* Added a `bgpvpn` value support for the `object_type` in the `openstack_networking_rbac_policy_v2` resource ([#1738](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1738))
+* Added OpenStack provider version in the `User-Agent` request header ([#1761](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1761))
+* Added a new `stateful` argument to the `openstack_networking_secgroup_v2` resource ([#1757](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1757))
+* Added a new `stateful` argument to the `openstack_networking_secgroup_v2` data source ([#1757](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1757))
+
+BUG FIXES
+
+* Fixed a bug when updating `node_count` to 0 on `openstack_containerinfra_cluster_v1` ([#1719](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1719))
+* Set load balancer resource ID before waiting for its status in the `openstack_lb_loadbalancer_v2` resource ([#1733](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1733))
+* Update module name to v2 to match GitHub versioning ([#1729](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1729))
+* Deleted URL validation in the `openstack_identity_endpoint_v3` resource ([#1701](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1701))
+* Fixed panic on empty `subnet_id` in the `fixed_ip` block of the `openstack_networking_port_v2` resource ([#962](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/962))
+* Fixed panic on update action in the `openstack_networking_portforwarding_v2` resource ([#1742](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1742))
+
+## 2.0.0 ( 16 May, 2024 )
+
+The upgrade guide to version 2 offers more detailed information on the changes and required steps before the upgrade.
+
+BREAKING CHANGES
+
+* Remove support of neutron-lbaas from `openstack_lb_l7_policy_v2` ([#1655](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1655))
+* Remove support of neutron-lbaas from `openstack_lb_l7_rule_v2` ([#1674](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1674))
+* Remove support of neutron-lbaas from `openstack_lb_quota_v2` ([#1658](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1658))
+* Remove support of neutron-lbaas from `openstack_lb_member_v2` ([#1675](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1675))
+* Remove support of neutron-lbaas from `openstack_lb_members_v2` ([#1659](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1659))
+* Remove support of neutron-lbaas from `openstack_lb_monitor_v2` ([#1676](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1676))
+* Remove support of neutron-lbaas from `openstack_lb_listener_v2` ([#1695](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1695))
+* Remove support of neutron-lbaas from `openstack_lb_pool_v2` ([#1696](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1696))
+* Remove support of neutron-lbaas from `openstack_lb_loadbalancer_v2` ([#1697](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1697))
+* Remove `multiattach` from `openstack_blockstorage_volume_v3` ([#1654](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1654))
+* Remove `dhcp_disabled` from `openstack_networking_subnet_v2` data source([#1663](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1663))
+* Remove `update_at` from `openstack_images_image_v2` ([#1662](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1662))
+* Remove `instance_id` from `openstack_blockstorage_volume_attach_v2` ([#1682](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1682))
+* Remove `member` from `openstack_lb_pool_v1` ([#1683](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1683))
+* Remove `allocation_pools` from `networking_subnet_v2` ([#1684](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1684))
+* Remove `external_gateway` from `networking_router_v2` ([#1685](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1685))
+* Remove `floating_ip` from `compute_instance_v2` ([#1686](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1686))
+* Remove `volume` from `compute_instance_v2` ([#1687](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1687))
+* Remove `sort_key` and `sort_dir` from glance data sources (#1661)(https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1661))
+
+
+FEATURES
+
+* __New Data Source__: `openstack_lb_flavor_v2` ([#1679](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1679))
+
+
+IMPROVEMENTS
+
+* Added `tag` on `openstack_compute_volume_attach_v2` ([#1713](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1713))
+
+
+NOTES
+
+* Added Openstack Caracal jobs to CI ([#1705](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1705))
+* Removed Openstack Zed jobs from CI ([#1705](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1710))
+* Removed Openstack Yoga jobs from CI ([#1705](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1671))
+
+
+## 1.54.1 (31 January, 2024)
+
+NOTES
+
+* Clarify provider deprecation message for option `use_octavia`. Add info on how various users will be affected ([#1665](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1665)).
+
+## 1.54.0 ( 29 January, 2024)
+
+NOTES
+
+* **Support for neutron-lbaas will be removed on next major release.** Only `octavia` will be supported. Related resources and data-sources marked with a deprecation notice([#1640](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1640)).
+* Added deprecation notice for `multiattach` on `openstack_blockstorage_volume_v3` ([#1629](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1629)). Support for it **will be removed on next major release**.
+* Added deprecation notice for various nova resources. Support for them will **not** be removed, but users are notified to use the new resources instead ([#1639](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1639)).
 
 
 IMPROVEMENTS
@@ -12,6 +162,8 @@ IMPROVEMENTS
 * Updated docs of `openstack_networking_port_v2` to note ip allocation depedency with subnet ([#1622](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1622))
 * Updated docs of `openstack_networking_secgroup_rule_v2` for port-range exception ([#1632](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1632))
 * Added extra validations on `openstack_lb_pool_v2` ([#1628](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1628))
+* Added attachment information on `data_source_blockstorage_volume_v3` ([#1624](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1624))
+* Added `backup_id` to `openstack_blockstorage_volume_v3` ([#1641](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1641))
 
 
 BUG FIXES
@@ -35,6 +187,7 @@ BUG FIXES
 
 * Fixed `segmentation_id` on `openstack_networking_network_v2` to allow neutron to dynamically set it ([#1600](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1600))
 * Fixed an issue to allow `cluster_template_id` on `openstack_containerinfra_cluster_v1` to be updated without triggering a new cluster creation ([#1598](https://github.com/terraform-provider-openstack/terraform-provider-openstack/pull/1598))
+
 ## 1.52.1 (29 June, 2023)
 
 NOTES

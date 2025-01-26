@@ -1,6 +1,7 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"testing"
@@ -8,7 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/lbaas_v2/l7policies"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/l7policies"
 )
 
 func TestAccLBV2L7Policy_basic(t *testing.T) {
@@ -96,13 +97,47 @@ func TestAccLBV2L7Policy_basic(t *testing.T) {
 						regexp.MustCompile("^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-4[a-fA-F0-9]{3}-[8|9|aA|bB][a-fA-F0-9]{3}-[a-fA-F0-9]{12}$")),
 				),
 			},
+			{
+				Config: testAccCheckLbV2L7PolicyConfigUpdate4(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLBV2L7PolicyExists("openstack_lb_l7policy_v2.l7policy_1", &l7Policy),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "name", "test_updated"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "description", ""),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "action", "REDIRECT_PREFIX"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "position", "1"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "redirect_prefix", "https://foo.bar"),
+				),
+			},
+			{
+				Config: testAccCheckLbV2L7PolicyConfigUpdate5(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckLBV2L7PolicyExists("openstack_lb_l7policy_v2.l7policy_1", &l7Policy),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "name", "test_updated"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "description", ""),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "action", "REDIRECT_PREFIX"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "position", "1"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "redirect_prefix", "https://foo.bar.baz"),
+					resource.TestCheckResourceAttr(
+						"openstack_lb_l7policy_v2.l7policy_1", "redirect_http_code", "307"),
+				),
+			},
 		},
 	})
 }
 
 func testAccCheckLBV2L7PolicyDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	lbClient, err := chooseLBV2AccTestClient(config, osRegionName)
+	lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
 	}
@@ -112,7 +147,7 @@ func testAccCheckLBV2L7PolicyDestroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := l7policies.Get(lbClient, rs.Primary.ID).Extract()
+		_, err := l7policies.Get(context.TODO(), lbClient, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("L7 Policy still exists: %s", rs.Primary.ID)
 		}
@@ -133,12 +168,12 @@ func testAccCheckLBV2L7PolicyExists(n string, l7Policy *l7policies.L7Policy) res
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		lbClient, err := chooseLBV2AccTestClient(config, osRegionName)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
 		}
 
-		found, err := l7policies.Get(lbClient, rs.Primary.ID).Extract()
+		found, err := l7policies.Get(context.TODO(), lbClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -251,6 +286,49 @@ resource "openstack_lb_l7policy_v2" "l7policy_1" {
   action           = "REJECT"
   position         = 1
   listener_id      = "${openstack_lb_listener_v2.listener_1.id}"
+}
+`, testAccCheckLbV2L7PolicyConfig)
+}
+
+func testAccCheckLbV2L7PolicyConfigUpdate4() string {
+	return fmt.Sprintf(`
+%s
+
+resource "openstack_lb_pool_v2" "pool_1" {
+  name            = "pool_1"
+  protocol        = "HTTP"
+  lb_method       = "ROUND_ROBIN"
+  loadbalancer_id = "${openstack_lb_loadbalancer_v2.loadbalancer_1.id}"
+}
+
+resource "openstack_lb_l7policy_v2" "l7policy_1" {
+  name             = "test_updated"
+  action           = "REDIRECT_PREFIX"
+  position         = 1
+  listener_id      = "${openstack_lb_listener_v2.listener_1.id}"
+  redirect_prefix  = "https://foo.bar"
+}
+`, testAccCheckLbV2L7PolicyConfig)
+}
+
+func testAccCheckLbV2L7PolicyConfigUpdate5() string {
+	return fmt.Sprintf(`
+%s
+
+resource "openstack_lb_pool_v2" "pool_1" {
+  name            = "pool_1"
+  protocol        = "HTTP"
+  lb_method       = "ROUND_ROBIN"
+  loadbalancer_id = "${openstack_lb_loadbalancer_v2.loadbalancer_1.id}"
+}
+
+resource "openstack_lb_l7policy_v2" "l7policy_1" {
+  name               = "test_updated"
+  action             = "REDIRECT_PREFIX"
+  position           = 1
+  listener_id        = "${openstack_lb_listener_v2.listener_1.id}"
+  redirect_prefix    = "https://foo.bar.baz"
+  redirect_http_code = 307
 }
 `, testAccCheckLbV2L7PolicyConfig)
 }

@@ -21,6 +21,12 @@ if [ -z "$_MAGNUM_IMAGE_ID" ]; then
         _MAGNUM_IMAGE_ID=$(openstack image list --format value -c Name -c ID | grep -i atomic | cut -d ' ' -f 1)
 fi
 
+if [ -n "${OS_LB_ENVIRONMENT}" ]; then
+        LB_FP_ID=`openstack loadbalancer flavorprofile create --provider amphora --flavor-data '{"loadbalancer_topology": "SINGLE"}' --name lb.acctest -f value -c id`
+        openstack loadbalancer flavor create --name lb.acctest --flavorprofile $LB_FP_ID --description "Octavia flavor for acceptance tests" --enable
+        echo export OS_LB_FLAVOR_NAME=lb.acctest >> openrc
+fi
+
 echo export OS_IMAGE_NAME="$_IMAGE_NAME" >> openrc
 echo export OS_IMAGE_ID="$_IMAGE_ID" >> openrc
 echo export OS_NETWORK_ID="$_NETWORK_ID" >> openrc
@@ -31,6 +37,8 @@ echo export OS_FLAVOR_ID=99 >> openrc
 echo export OS_FLAVOR_ID_RESIZE=98 >> openrc
 echo export OS_DOMAIN_ID=default >> openrc
 echo export OS_MAGNUM_IMAGE_ID="$_MAGNUM_IMAGE_ID" >> openrc
+echo export OS_MAGNUM_IMAGE="$_MAGNUM_IMAGE_ID" >> openrc
+echo export OS_MAGNUM_FLAVOR=99 >> openrc
 echo export OS_MAGNUM_KEYPAIR=magnum >> openrc
 
 source openrc $1 $1

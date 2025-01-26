@@ -3,14 +3,15 @@ package openstack
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/gophercloud/gophercloud"
+	"github.com/gophercloud/gophercloud/v2"
 )
 
 // BuildRequest takes an opts struct and builds a request body for
@@ -29,7 +30,7 @@ func BuildRequest(opts interface{}, parent string) (map[string]interface{}, erro
 // CheckDeleted checks the error to see if it's a 404 (Not Found) and, if so,
 // sets the resource ID to the empty string instead of throwing an error.
 func CheckDeleted(d *schema.ResourceData, err error, msg string) error {
-	if _, ok := err.(gophercloud.ErrDefault404); ok {
+	if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 		d.SetId("")
 		return nil
 	}
@@ -53,6 +54,11 @@ func GetRegion(d *schema.ResourceData, config *Config) string {
 func AddValueSpecs(body map[string]interface{}) map[string]interface{} {
 	if body["value_specs"] != nil {
 		for k, v := range body["value_specs"].(map[string]interface{}) {
+			// this hack allows to pass boolean values as strings
+			if v == "true" || v == "false" {
+				body[k] = v == "true"
+				continue
+			}
 			body[k] = v
 		}
 		delete(body, "value_specs")
@@ -70,23 +76,22 @@ func MapValueSpecs(d *schema.ResourceData) map[string]string {
 	return m
 }
 
-func checkForRetryableError(err error) *resource.RetryError {
-	switch e := err.(type) {
-	case gophercloud.ErrDefault500:
-		return resource.RetryableError(err)
-	case gophercloud.ErrDefault409:
-		return resource.RetryableError(err)
-	case gophercloud.ErrDefault503:
-		return resource.RetryableError(err)
-	case gophercloud.ErrUnexpectedResponseCode:
-		if e.GetStatusCode() == 504 || e.GetStatusCode() == 502 {
-			return resource.RetryableError(err)
-		} else {
-			return resource.NonRetryableError(err)
-		}
-	default:
-		return resource.NonRetryableError(err)
+func checkForRetryableError(err error) *retry.RetryError {
+	e, ok := err.(gophercloud.ErrUnexpectedResponseCode)
+	if !ok {
+		return retry.NonRetryableError(err)
 	}
+
+	switch e.Actual {
+	case http.StatusConflict, // 409
+		http.StatusInternalServerError, // 500
+		http.StatusBadGateway,          // 502
+		http.StatusServiceUnavailable,  // 503
+		http.StatusGatewayTimeout:      // 504
+		return retry.RetryableError(err)
+	}
+
+	return retry.NonRetryableError(err)
 }
 
 func suppressEquivalentTimeDiffs(k, old, new string, d *schema.ResourceData) bool {
@@ -157,7 +162,7 @@ func expandObjectTags(d *schema.ResourceData) []string {
 }
 
 func expandToMapStringString(v map[string]interface{}) map[string]string {
-	m := make(map[string]string)
+	m := make(map[string]string, len(v))
 	for key, val := range v {
 		if strVal, ok := val.(string); ok {
 			m[key] = strVal
@@ -308,4 +313,27 @@ func mapDiffWithNilValues(oldMap, newMap map[string]interface{}) (output map[str
 	}
 
 	return
+}
+
+// parsePairedIDs is a helper function that parses a raw ID into two
+// separate IDs. This is useful for resources that have a parent/child
+// relationship.
+func parsePairedIDs(id string, res string) (string, string, error) {
+	parts := strings.SplitN(id, "/", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("Unable to determine %s ID from raw ID: %s", res, id)
+	}
+
+	return parts[0], parts[1], nil
+}
+
+// getOkExists is a helper function that replaces the deprecated GetOkExists
+// schema method. It returns the value of the key if it exists in the
+// configuration, along with a boolean indicating if the key exists.
+func getOkExists(d *schema.ResourceData, key string) (interface{}, bool) {
+	v := d.GetRawConfig().GetAttr(key)
+	if v.IsNull() {
+		return nil, false
+	}
+	return d.Get(key), true
 }

@@ -11,8 +11,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
-	"github.com/gophercloud/utils/terraform/hashcode"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
+	"github.com/gophercloud/utils/v2/terraform/hashcode"
 )
 
 func dataSourceNetworkingSubnetIDsV2() *schema.Resource {
@@ -109,6 +109,11 @@ func dataSourceNetworkingSubnetIDsV2() *schema.Resource {
 				Optional: true,
 			},
 
+			"dns_publish_fixed_ip": {
+				Type:     schema.TypeBool,
+				Optional: true,
+			},
+
 			"tags": {
 				Type:     schema.TypeSet,
 				Optional: true,
@@ -141,7 +146,7 @@ func dataSourceNetworkingSubnetIDsV2() *schema.Resource {
 
 func dataSourceNetworkingSubnetIDsV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	networkingClient, err := config.NetworkingV2Client(GetRegion(d, config))
+	networkingClient, err := config.NetworkingV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -156,7 +161,7 @@ func dataSourceNetworkingSubnetIDsV2Read(ctx context.Context, d *schema.Resource
 		listOpts.Description = v.(string)
 	}
 
-	if v, ok := d.GetOkExists("dhcp_enabled"); ok {
+	if v, ok := getOkExists(d, "dhcp_enabled"); ok {
 		enableDHCP := v.(bool)
 		listOpts.EnableDHCP = &enableDHCP
 	}
@@ -193,6 +198,11 @@ func dataSourceNetworkingSubnetIDsV2Read(ctx context.Context, d *schema.Resource
 		listOpts.SubnetPoolID = v.(string)
 	}
 
+	if v, ok := d.GetOk("dns_publish_fixed_ip"); ok {
+		v := v.(bool)
+		listOpts.DNSPublishFixedIP = &v
+	}
+
 	tags := networkingV2AttributesTags(d)
 	if len(tags) > 0 {
 		listOpts.Tags = strings.Join(tags, ",")
@@ -206,7 +216,7 @@ func dataSourceNetworkingSubnetIDsV2Read(ctx context.Context, d *schema.Resource
 		listOpts.SortDir = v.(string)
 	}
 
-	pages, err := subnets.List(networkingClient, listOpts).AllPages()
+	pages, err := subnets.List(networkingClient, listOpts).AllPages(ctx)
 	if err != nil {
 		return diag.Errorf("Unable to retrieve openstack_networking_subnet_ids_v2: %s", err)
 	}

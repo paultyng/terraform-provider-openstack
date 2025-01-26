@@ -3,15 +3,16 @@ package openstack
 import (
 	"context"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/routers"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
 )
 
 func resourceNetworkingRouterInterfaceV2() *schema.Resource {
@@ -68,7 +69,7 @@ func resourceNetworkingRouterInterfaceV2() *schema.Resource {
 
 func resourceNetworkingRouterInterfaceV2Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	networkingClient, err := config.NetworkingV2Client(GetRegion(d, config))
+	networkingClient, err := config.NetworkingV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -79,17 +80,17 @@ func resourceNetworkingRouterInterfaceV2Create(ctx context.Context, d *schema.Re
 	}
 
 	log.Printf("[DEBUG] openstack_networking_router_interface_v2 create options: %#v", createOpts)
-	r, err := routers.AddInterface(networkingClient, d.Get("router_id").(string), createOpts).Extract()
+	r, err := routers.AddInterface(ctx, networkingClient, d.Get("router_id").(string), createOpts).Extract()
 	if err != nil {
 		return diag.Errorf("Error creating openstack_networking_router_interface_v2: %s", err)
 	}
 
 	log.Printf("[DEBUG] Waiting for openstack_networking_router_interface_v2 %s to become available", r.PortID)
 
-	stateConf := &resource.StateChangeConf{
+	stateConf := &retry.StateChangeConf{
 		Pending:    []string{"BUILD", "PENDING_CREATE", "PENDING_UPDATE"},
 		Target:     []string{"ACTIVE", "DOWN"},
-		Refresh:    resourceNetworkingRouterInterfaceV2StateRefreshFunc(networkingClient, r.PortID),
+		Refresh:    resourceNetworkingRouterInterfaceV2StateRefreshFunc(ctx, networkingClient, r.PortID),
 		Timeout:    d.Timeout(schema.TimeoutCreate),
 		Delay:      5 * time.Second,
 		MinTimeout: 3 * time.Second,
@@ -108,14 +109,14 @@ func resourceNetworkingRouterInterfaceV2Create(ctx context.Context, d *schema.Re
 
 func resourceNetworkingRouterInterfaceV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	networkingClient, err := config.NetworkingV2Client(GetRegion(d, config))
+	networkingClient, err := config.NetworkingV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
 
-	r, err := ports.Get(networkingClient, d.Id()).Extract()
+	r, err := ports.Get(ctx, networkingClient, d.Id()).Extract()
 	if err != nil {
-		if _, ok := err.(gophercloud.ErrDefault404); ok {
+		if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 			d.SetId("")
 			return nil
 		}
@@ -149,15 +150,15 @@ func resourceNetworkingRouterInterfaceV2Update(ctx context.Context, d *schema.Re
 
 func resourceNetworkingRouterInterfaceV2Delete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	networkingClient, err := config.NetworkingV2Client(GetRegion(d, config))
+	networkingClient, err := config.NetworkingV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
 
-	stateConf := &resource.StateChangeConf{
+	stateConf := &retry.StateChangeConf{
 		Pending:    []string{"ACTIVE"},
 		Target:     []string{"DELETED"},
-		Refresh:    resourceNetworkingRouterInterfaceV2DeleteRefreshFunc(networkingClient, d),
+		Refresh:    resourceNetworkingRouterInterfaceV2DeleteRefreshFunc(ctx, networkingClient, d),
 		Timeout:    d.Timeout(schema.TimeoutDelete),
 		Delay:      5 * time.Second,
 		MinTimeout: 3 * time.Second,

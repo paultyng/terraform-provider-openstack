@@ -9,18 +9,18 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
-	"github.com/terraform-provider-openstack/terraform-provider-openstack/openstack/internal/pathorcontents"
+	"github.com/terraform-provider-openstack/terraform-provider-openstack/v3/openstack/internal/pathorcontents"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/utils/terraform/auth"
-	"github.com/gophercloud/utils/terraform/mutexkv"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/utils/v2/terraform/auth"
+	"github.com/gophercloud/utils/v2/terraform/mutexkv"
 )
 
 var (
+	osBackupID                   = os.Getenv("OS_BACKUP_ID")
 	osDBEnvironment              = os.Getenv("OS_DB_ENVIRONMENT")
 	osDBDatastoreVersion         = os.Getenv("OS_DB_DATASTORE_VERSION")
 	osDBDatastoreType            = os.Getenv("OS_DB_DATASTORE_TYPE")
-	osDeprecatedEnvironment      = os.Getenv("OS_DEPRECATED_ENVIRONMENT")
 	osDNSEnvironment             = os.Getenv("OS_DNS_ENVIRONMENT")
 	osExtGwID                    = os.Getenv("OS_EXTGW_ID")
 	osFlavorID                   = os.Getenv("OS_FLAVOR_ID")
@@ -34,9 +34,10 @@ var (
 	osRegionName                 = os.Getenv("OS_REGION_NAME")
 	osSwiftEnvironment           = os.Getenv("OS_SWIFT_ENVIRONMENT")
 	osLbEnvironment              = os.Getenv("OS_LB_ENVIRONMENT")
+	osLbFlavorName               = os.Getenv("OS_LB_FLAVOR_NAME")
 	osFwEnvironment              = os.Getenv("OS_FW_ENVIRONMENT")
 	osVpnEnvironment             = os.Getenv("OS_VPN_ENVIRONMENT")
-	osUseOctavia                 = os.Getenv("OS_USE_OCTAVIA")
+	osBgpVpnEnvironment          = os.Getenv("OS_BGPVPN_ENVIRONMENT")
 	osContainerInfraEnvironment  = os.Getenv("OS_CONTAINER_INFRA_ENVIRONMENT")
 	osSfsEnvironment             = os.Getenv("OS_SFS_ENVIRONMENT")
 	osTransparentVlanEnvironment = os.Getenv("OS_TRANSPARENT_VLAN_ENVIRONMENT")
@@ -44,7 +45,7 @@ var (
 	osGlanceimportEnvironment    = os.Getenv("OS_GLANCEIMPORT_ENVIRONMENT")
 	osHypervisorEnvironment      = os.Getenv("OS_HYPERVISOR_HOSTNAME")
 	osPortForwardingEnvironment  = os.Getenv("OS_PORT_FORWARDING_ENVIRONMENT")
-	osBlockStorageV2             = os.Getenv("OS_BLOCKSTORAGE_V2")
+	osWorkflowEnvironment        = os.Getenv("OS_WORKFLOW_ENVIRONMENT")
 	osMagnumHTTPProxy            = os.Getenv("OS_MAGNUM_HTTP_PROXY")
 	osMagnumHTTPSProxy           = os.Getenv("OS_MAGNUM_HTTPS_PROXY")
 	osMagnumNoProxy              = os.Getenv("OS_MAGNUM_NO_PROXY")
@@ -94,19 +95,6 @@ func testAccPreCheckRequiredEnvVars(t *testing.T) {
 
 func testAccPreCheck(t *testing.T) {
 	testAccPreCheckRequiredEnvVars(t)
-
-	// Do not run the test if this is a deprecated testing environment.
-	if osDeprecatedEnvironment != "" {
-		t.Skip("This environment only runs deprecated tests")
-	}
-}
-
-func testAccPreCheckDeprecated(t *testing.T) {
-	testAccPreCheckRequiredEnvVars(t)
-
-	if osDeprecatedEnvironment == "" {
-		t.Skip("This environment does not support deprecated tests")
-	}
 }
 
 func testAccPreCheckDNS(t *testing.T) {
@@ -139,21 +127,9 @@ func testAccPreCheckLB(t *testing.T) {
 	if osLbEnvironment == "" {
 		t.Skip("This environment does not support LB tests")
 	}
-}
 
-func testAccPreCheckBlockStorageV2(t *testing.T) {
-	testAccPreCheckRequiredEnvVars(t)
-
-	if osBlockStorageV2 == "" {
-		t.Skip("This environment does not support BlockStorageV2 tests")
-	}
-}
-
-func testAccPreCheckUseOctavia(t *testing.T) {
-	testAccPreCheckRequiredEnvVars(t)
-
-	if osUseOctavia == "" {
-		t.Skip("This environment does not support Octavia tests")
+	if osLbFlavorName == "" {
+		t.Skip("This environment does not support LB tests")
 	}
 }
 
@@ -170,6 +146,14 @@ func testAccPreCheckVPN(t *testing.T) {
 
 	if osVpnEnvironment == "" {
 		t.Skip("This environment does not support VPN tests")
+	}
+}
+
+func testAccPreCheckBGPVPN(t *testing.T) {
+	testAccPreCheckRequiredEnvVars(t)
+
+	if osBgpVpnEnvironment == "" {
+		t.Skip("This environment does not support BGP VPN tests")
 	}
 }
 
@@ -235,6 +219,14 @@ func testAccPreCheckPortForwarding(t *testing.T) {
 	}
 }
 
+func testAccPreCheckWorkflow(t *testing.T) {
+	testAccPreCheckRequiredEnvVars(t)
+
+	if osWorkflowEnvironment == "" {
+		t.Skip("This environment does not support 'workflow' extension tests")
+	}
+}
+
 func testAccPreCheckAdminOnly(t *testing.T) {
 	v := os.Getenv("OS_USERNAME")
 	if v != "admin" {
@@ -283,17 +275,6 @@ func IsReleasesBelow(t *testing.T, release string) bool {
 	return false
 }
 
-// testAccSkipReleasesAbove will have the test be skipped on releases above a certain
-// one. The test is always skipped on master release. Releases are named such
-// as 'stable/mitaka', master, etc.
-func testAccSkipReleasesAbove(t *testing.T, release string) {
-	currentBranch := os.Getenv("OS_BRANCH")
-
-	if IsReleasesAbove(t, release) {
-		t.Skipf("this is not supported above %s, testing in %s", release, currentBranch)
-	}
-}
-
 // IsReleasesAbove will return true on releases above a certain
 // one. The result is always true on master release. Releases are named such
 // as 'stable/mitaka', master, etc.
@@ -314,13 +295,13 @@ func IsReleasesAbove(t *testing.T, release string) bool {
 // not possible.
 func SetReleaseNumber(t *testing.T, release string) int {
 	switch release {
-	case "stable/xena":
-		return 1
-	case "stable/yoga":
-		return 2
 	case "stable/zed":
-		return 3
+		return 1
 	case "stable/2023.1":
+		return 2
+	case "stable/2023.2":
+		return 3
+	case "stable/2024.1":
 		return 4
 	case "master":
 		return 5
@@ -516,10 +497,10 @@ func testAccAuthFromEnv() (*Config, error) {
 			UserDomainName:              os.Getenv("OS_USER_DOMAIN_NAME"),
 			Username:                    os.Getenv("OS_USERNAME"),
 			UserID:                      os.Getenv("OS_USER_ID"),
+			UseOctavia:                  true,
 			ApplicationCredentialID:     os.Getenv("OS_APPLICATION_CREDENTIAL_ID"),
 			ApplicationCredentialName:   os.Getenv("OS_APPLICATION_CREDENTIAL_NAME"),
 			ApplicationCredentialSecret: os.Getenv("OS_APPLICATION_CREDENTIAL_SECRET"),
-			UseOctavia:                  testGetenvBool("OS_USE_OCTAVIA"),
 			DelayedAuth:                 testGetenvBool("OS_DELAYED_AUTH"),
 			AllowReauth:                 testGetenvBool("OS_ALLOW_REAUTH"),
 			AuthOpts:                    authOpts,
@@ -527,7 +508,7 @@ func testAccAuthFromEnv() (*Config, error) {
 		},
 	}
 
-	if err := config.LoadAndValidate(); err != nil {
+	if err := config.LoadAndValidate(context.TODO()); err != nil {
 		return nil, err
 	}
 

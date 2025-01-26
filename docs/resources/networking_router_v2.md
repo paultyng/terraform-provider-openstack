@@ -43,12 +43,6 @@ The following arguments are supported:
   distributed router. The default policy setting in Neutron restricts
   usage of this property to administrative users only.
 
-* `external_gateway` - (**Deprecated** - use `external_network_id` instead) The
-  network UUID of an external gateway for the router. A router with an
-  external gateway is required if any compute instances or load balancers
-  will be using floating IPs. Changing this updates the external gateway
-  of an existing router.
-
 * `external_network_id` - (Optional) The network UUID of an external gateway
   for the router. A router with an external gateway is required if any
   compute instances or load balancers will be using floating IPs. Changing
@@ -81,7 +75,7 @@ The following arguments are supported:
 * `vendor_options` - (Optional) Map of additional vendor-specific options.
   Supported options are described below.
 
-* `availability_zone_hints` -  (Optional) An availability zone is used to make 
+* `availability_zone_hints` - (Optional) An availability zone is used to make 
   network resources highly available. Used for resources with high availability
   so that they are scheduled on different availability zones. Changing this
   creates a new router.
@@ -106,7 +100,6 @@ The following attributes are exported:
 * `name` - See Argument Reference above.
 * `description` - See Argument Reference above.
 * `admin_state_up` - See Argument Reference above.
-* `external_gateway` - See Argument Reference above.
 * `external_network_id` - See Argument Reference above.
 * `enable_snat` - See Argument Reference above.
 * `external_fixed_ip` - See Argument Reference above.

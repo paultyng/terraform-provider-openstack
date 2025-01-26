@@ -1,13 +1,14 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/members"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/members"
 )
 
 func TestAccImagesImageAccessV2_basic(t *testing.T) {
@@ -47,7 +48,7 @@ func TestAccImagesImageAccessV2_basic(t *testing.T) {
 
 func testAccCheckImagesImageAccessV2Destroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	imageClient, err := config.ImageV2Client(osRegionName)
+	imageClient, err := config.ImageV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack Image: %s", err)
 	}
@@ -57,12 +58,12 @@ func testAccCheckImagesImageAccessV2Destroy(s *terraform.State) error {
 			continue
 		}
 
-		imageID, memberID, err := resourceImagesImageAccessV2ParseID(rs.Primary.ID)
+		imageID, memberID, err := parsePairedIDs(rs.Primary.ID, "openstack_images_image_access_v2")
 		if err != nil {
 			return err
 		}
 
-		_, err = members.Get(imageClient, imageID, memberID).Extract()
+		_, err = members.Get(context.TODO(), imageClient, imageID, memberID).Extract()
 		if err == nil {
 			return fmt.Errorf("Image still exists")
 		}
@@ -83,17 +84,17 @@ func testAccCheckImagesImageAccessV2Exists(n string, member *members.Member) res
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		imageClient, err := config.ImageV2Client(osRegionName)
+		imageClient, err := config.ImageV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack Image: %s", err)
 		}
 
-		imageID, memberID, err := resourceImagesImageAccessV2ParseID(rs.Primary.ID)
+		imageID, memberID, err := parsePairedIDs(rs.Primary.ID, "openstack_images_image_access_v2")
 		if err != nil {
 			return err
 		}
 
-		found, err := members.Get(imageClient, imageID, memberID).Extract()
+		found, err := members.Get(context.TODO(), imageClient, imageID, memberID).Extract()
 		if err != nil {
 			return err
 		}

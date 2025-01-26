@@ -1,13 +1,15 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
+	"regexp"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 )
 
 func TestAccBlockStorageV3Volume_basic(t *testing.T) {
@@ -98,33 +100,6 @@ func TestAccBlockStorageV3Volume_image(t *testing.T) {
 	})
 }
 
-func TestAccBlockStorageV3Volume_image_multiattach(t *testing.T) {
-	var volume volumes.Volume
-
-	resource.Test(t, resource.TestCase{
-		PreCheck: func() {
-			t.Skip("Multiattach volumes has been deprecated and removed. Multiattach enabled volume types should be used instead")
-			testAccPreCheck(t)
-			testAccPreCheckNonAdminOnly(t)
-			testAccSkipReleasesAbove(t, "stable/wallaby")
-		},
-		ProviderFactories: testAccProviders,
-		CheckDestroy:      testAccCheckBlockStorageV3VolumeDestroy,
-		Steps: []resource.TestStep{
-			{
-				Config: testAccBlockStorageV3VolumeImageMultiattach(),
-				Check: resource.ComposeTestCheckFunc(
-					testAccCheckBlockStorageV3VolumeExists("openstack_blockstorage_volume_v3.volume_1", &volume),
-					resource.TestCheckResourceAttr(
-						"openstack_blockstorage_volume_v3.volume_1", "name", "volume_1"),
-					resource.TestCheckResourceAttr(
-						"openstack_blockstorage_volume_v3.volume_1", "multiattach", "true"),
-				),
-			},
-		},
-	})
-}
-
 func TestAccBlockStorageV3Volume_timeout(t *testing.T) {
 	var volume volumes.Volume
 
@@ -146,9 +121,58 @@ func TestAccBlockStorageV3Volume_timeout(t *testing.T) {
 	})
 }
 
+func TestAccBlockStorageV3Volume_attachment(t *testing.T) {
+	var volume volumes.Volume
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckBlockStorageV3VolumeDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBlockStorageV3VolumeAttachment(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckBlockStorageV3VolumeExists("openstack_blockstorage_volume_v3.volume_1", &volume),
+					testAccCheckBlockStorageV3VolumeAttachment(&volume, *regexp.MustCompile(`\/dev\/.dc`)),
+				),
+			},
+		},
+	})
+}
+
+// Test fails as devstack does not configure backup service properly
+// It can be tested locally by creating a backup from a volume first
+// and then exporting its ID to `OS_BACKUP_ID` env var.
+func TestAccBlockStorageV3VolumeFromBackup(t *testing.T) {
+	var volume volumes.Volume
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+			t.Skip("Currently Cinder Backup is not configured properly on GH-A devstack")
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckBlockStorageV3VolumeDestroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccBlockStorageV3VolumeFromBackup(),
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckBlockStorageV3VolumeExists("openstack_blockstorage_volume_v3.volume_1", &volume),
+					resource.TestCheckResourceAttr(
+						"openstack_blockstorage_volume_v3.volume_1", "name", "volume_1"),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckBlockStorageV3VolumeDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	blockStorageClient, err := config.BlockStorageV3Client(osRegionName)
+	blockStorageClient, err := config.BlockStorageV3Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack block storage client: %s", err)
 	}
@@ -158,7 +182,7 @@ func testAccCheckBlockStorageV3VolumeDestroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := volumes.Get(blockStorageClient, rs.Primary.ID).Extract()
+		_, err := volumes.Get(context.TODO(), blockStorageClient, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("Volume still exists")
 		}
@@ -179,12 +203,12 @@ func testAccCheckBlockStorageV3VolumeExists(n string, volume *volumes.Volume) re
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		blockStorageClient, err := config.BlockStorageV3Client(osRegionName)
+		blockStorageClient, err := config.BlockStorageV3Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack block storage client: %s", err)
 		}
 
-		found, err := volumes.Get(blockStorageClient, rs.Primary.ID).Extract()
+		found, err := volumes.Get(context.TODO(), blockStorageClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -219,6 +243,28 @@ func testAccCheckBlockStorageV3VolumeMetadata(
 		}
 
 		return fmt.Errorf("Metadata not found: %s", k)
+	}
+}
+
+func testAccCheckBlockStorageV3VolumeAttachment(
+	volume *volumes.Volume, r regexp.Regexp) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		if volume.Attachments == nil {
+			return fmt.Errorf("No Attachment information")
+		}
+
+		if len(volume.Attachments) == 0 {
+			return fmt.Errorf("Volume shows not being attached to any Instance")
+		} else if len(volume.Attachments) > 1 {
+			return fmt.Errorf("Volume shows being attached to more Instances than expected")
+		}
+
+		match := r.MatchString(volume.Attachments[0].Device)
+		if match {
+			return nil
+		} else {
+			return fmt.Errorf("Volume shows other mountpoint than expected")
+		}
 	}
 }
 
@@ -298,17 +344,6 @@ resource "openstack_blockstorage_volume_v3" "volume_1" {
 `, osImageID)
 }
 
-func testAccBlockStorageV3VolumeImageMultiattach() string {
-	return fmt.Sprintf(`
-resource "openstack_blockstorage_volume_v3" "volume_1" {
-  name = "volume_1"
-  size = 5
-  image_id = "%s"
-  multiattach = true
-}
-`, osImageID)
-}
-
 const testAccBlockStorageV3VolumeTimeout = `
 resource "openstack_blockstorage_volume_v3" "volume_1" {
   name = "volume_1"
@@ -321,3 +356,36 @@ resource "openstack_blockstorage_volume_v3" "volume_1" {
   }
 }
 `
+
+func testAccBlockStorageV3VolumeAttachment() string {
+	return fmt.Sprintf(`
+resource "openstack_blockstorage_volume_v3" "volume_1" {
+  name = "volume_1"
+  size = 1
+}
+
+resource "openstack_compute_instance_v2" "instance_1" {
+  name = "instance_1"
+  security_groups = ["default"]
+  network {
+    uuid = "%s"
+  }
+}
+
+resource "openstack_compute_volume_attach_v2" "va_1" {
+  instance_id = "${openstack_compute_instance_v2.instance_1.id}"
+  volume_id = "${openstack_blockstorage_volume_v3.volume_1.id}"
+  device = "/dev/vdc"
+}
+`, osNetworkID)
+}
+
+func testAccBlockStorageV3VolumeFromBackup() string {
+	return fmt.Sprintf(`
+resource "openstack_blockstorage_volume_v3" "volume_1" {
+  name = "volume_1"
+  backup_id = "%s"
+  size = 2
+}
+`, osBackupID)
+}

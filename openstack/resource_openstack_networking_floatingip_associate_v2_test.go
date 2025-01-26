@@ -1,14 +1,16 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
+	"net/http"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/floatingips"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/floatingips"
 )
 
 func TestAccNetworkingV2FloatingIPAssociate_basic(t *testing.T) {
@@ -80,7 +82,7 @@ func TestAccNetworkingV2FloatingIPAssociate_twoFixedIPs(t *testing.T) {
 
 func testAccCheckNetworkingV2FloatingIPAssociateDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	networkClient, err := config.NetworkingV2Client(osRegionName)
+	networkClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack network client: %s", err)
 	}
@@ -90,9 +92,9 @@ func testAccCheckNetworkingV2FloatingIPAssociateDestroy(s *terraform.State) erro
 			continue
 		}
 
-		fip, err := floatingips.Get(networkClient, rs.Primary.ID).Extract()
+		fip, err := floatingips.Get(context.TODO(), networkClient, rs.Primary.ID).Extract()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault404); ok {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return nil
 			}
 
@@ -128,7 +130,7 @@ resource "openstack_networking_router_interface_v2" "router_interface_1" {
 
 resource "openstack_networking_router_v2" "router_1" {
   name = "router_1"
-  external_gateway = "%s"
+  external_network_id = "%s"
 }
 
 resource "openstack_networking_port_v2" "port_1" {
@@ -173,7 +175,7 @@ resource "openstack_networking_router_interface_v2" "router_interface_1" {
 
 resource "openstack_networking_router_v2" "router_1" {
   name = "router_1"
-  external_gateway = "%s"
+  external_network_id = "%s"
 }
 
 resource "openstack_networking_port_v2" "port_1" {
@@ -224,7 +226,7 @@ resource "openstack_networking_router_interface_v2" "router_interface_1" {
 
 resource "openstack_networking_router_v2" "router_1" {
   name = "router_1"
-  external_gateway = "%s"
+  external_network_id = "%s"
 }
 
 resource "openstack_networking_port_v2" "port_1" {

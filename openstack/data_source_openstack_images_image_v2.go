@@ -11,7 +11,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 )
 
 func dataSourceImagesImageV2() *schema.Resource {
@@ -75,21 +75,12 @@ func dataSourceImagesImageV2() *schema.Resource {
 				ForceNew: true,
 			},
 
-			"sort_key": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
-				Default:  "name",
-			},
-
-			"sort_direction": {
-				Type:     schema.TypeString,
-				Optional: true,
-				ForceNew: true,
-				Default:  "asc",
-				ValidateFunc: validation.StringInSlice([]string{
-					"asc", "desc",
-				}, false),
+			"sort": {
+				Type:         schema.TypeString,
+				Optional:     true,
+				ForceNew:     true,
+				Default:      "name:asc",
+				ValidateFunc: dataSourceValidateImageSortFilter,
 			},
 
 			"tag": {
@@ -126,17 +117,17 @@ func dataSourceImagesImageV2() *schema.Resource {
 				ConflictsWith: []string{"name"},
 			},
 
-			// Computed values
 			"container_format": {
 				Type:     schema.TypeString,
-				Computed: true,
+				Optional: true,
 			},
 
 			"disk_format": {
 				Type:     schema.TypeString,
-				Computed: true,
+				Optional: true,
 			},
 
+			// Computed values
 			"min_disk_gb": {
 				Type:     schema.TypeInt,
 				Computed: true,
@@ -201,7 +192,7 @@ func dataSourceImagesImageV2() *schema.Resource {
 // dataSourceImagesImageV2Read performs the image lookup.
 func dataSourceImagesImageV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	imageClient, err := config.ImageV2Client(GetRegion(d, config))
+	imageClient, err := config.ImageV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack image client: %s", err)
 	}
@@ -221,23 +212,24 @@ func dataSourceImagesImageV2Read(ctx context.Context, d *schema.ResourceData, me
 	}
 
 	listOpts := images.ListOpts{
-		Name:         d.Get("name").(string),
-		Visibility:   visibility,
-		Hidden:       d.Get("hidden").(bool),
-		Owner:        d.Get("owner").(string),
-		Status:       images.ImageStatusActive,
-		SizeMin:      int64(d.Get("size_min").(int)),
-		SizeMax:      int64(d.Get("size_max").(int)),
-		SortKey:      d.Get("sort_key").(string),
-		SortDir:      d.Get("sort_direction").(string),
-		Tags:         tags,
-		MemberStatus: memberStatus,
+		Name:            d.Get("name").(string),
+		Visibility:      visibility,
+		Hidden:          d.Get("hidden").(bool),
+		Owner:           d.Get("owner").(string),
+		Status:          images.ImageStatusActive,
+		SizeMin:         int64(d.Get("size_min").(int)),
+		SizeMax:         int64(d.Get("size_max").(int)),
+		Sort:            d.Get("sort").(string),
+		ContainerFormat: d.Get("container_format").(string),
+		DiskFormat:      d.Get("disk_format").(string),
+		Tags:            tags,
+		MemberStatus:    memberStatus,
 	}
 
 	log.Printf("[DEBUG] List Options: %#v", listOpts)
 
 	var image images.Image
-	allPages, err := images.List(imageClient, listOpts).AllPages()
+	allPages, err := images.List(imageClient, listOpts).AllPages(ctx)
 	if err != nil {
 		return diag.Errorf("Unable to query images: %s", err)
 	}

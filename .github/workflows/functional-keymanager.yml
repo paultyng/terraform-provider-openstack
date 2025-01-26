@@ -2,7 +2,7 @@
 # due to barbican's default policies changing completely
 # on wallaby
 name: functional-keymanager
-concurrency: 
+concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 on:
@@ -24,34 +24,32 @@ jobs:
         openstack_version: ["master"]
         ubuntu_version: ["22.04"]
         include:
+          - name: "dalmatian"
+            openstack_version: "stable/2024.2"
+            ubuntu_version: "22.04"
+          - name: "caracal"
+            openstack_version: "stable/2024.1"
+            ubuntu_version: "22.04"
           - name: "bobcat"
             openstack_version: "stable/2023.2"
             ubuntu_version: "22.04"
-          - name: "antelope"
-            openstack_version: "stable/2023.1"
-            ubuntu_version: "22.04"
-          - name: "zed"
-            openstack_version: "stable/zed"
-            ubuntu_version: "20.04"        
-          - name: "yoga"
-            openstack_version: "stable/yoga"
-            ubuntu_version: "20.04"
     runs-on: ubuntu-${{ matrix.ubuntu_version }}
     name: keymanager on OpenStack ${{ matrix.name }} with Barbican and run keymanager acceptance tests
     steps:
       - name: Checkout TPO
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Deploy devstack
-        uses: EmilienM/devstack-action@v0.11
+        uses: EmilienM/devstack-action@v0.15
         with:
           branch: ${{ matrix.openstack_version }}
           conf_overrides: |
             enable_plugin barbican https://github.com/openstack/barbican ${{ matrix.openstack_version }}
           enabled_services: 'barbican-svc,barbican-retry,barbican-keystone-listener'
       - name: Checkout go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
-          go-version: '^1.20'
+          go-version-file: 'go.mod'
+          cache: true
       - name: Run TPO acceptance tests
         run: OS_KEYMANAGER_ENVIRONMENT=True ./scripts/acceptancetest.sh
         env:
@@ -63,7 +61,7 @@ jobs:
         if: failure()
       - name: Upload logs artifacts on failure
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: functional-keymanager-${{ matrix.name }}
           path: /tmp/devstack-logs/*

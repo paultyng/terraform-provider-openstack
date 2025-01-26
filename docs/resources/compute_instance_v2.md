@@ -200,10 +200,14 @@ resource "openstack_compute_instance_v2" "multi-net" {
   }
 }
 
-resource "openstack_compute_floatingip_associate_v2" "myip" {
+data "openstack_networking_port_v2" "vm-port" {
+  device_id  = openstack_compute_instance_v2.multi-net.id
+  network_id = openstack_compute_instance_v2.multi-net.network.1.uuid
+}
+
+resource "openstack_networking_floatingip_associate_v2" "fip_vm" {
   floating_ip = openstack_networking_floatingip_v2.myip.address
-  instance_id = openstack_compute_instance_v2.multi-net.id
-  fixed_ip    = openstack_compute_instance_v2.multi-net.network.1.fixed_ip_v4
+  port_id     = data.openstack_networking_port_v2.vm-port.id
 }
 ```
 
@@ -410,9 +414,9 @@ The following arguments are supported:
     forcefully deleted. This is useful for environments that have reclaim / soft
     deletion enabled.
 
-* `power_state` - (Optional) Provide the VM state. Only 'active', 'shutoff'
+* `power_state` - (Optional) Provide the VM state. Only 'active', 'shutoff', 'paused'
     and 'shelved_offloaded' are supported values.
-    *Note*: If the initial power_state is the shutoff
+    *Note*: If the initial power_state is the shutoff or paused
     the VM will be stopped immediately after build and the provisioners like
     remote-exec or files are not supported.
 
@@ -487,7 +491,8 @@ The `block_device` block supports:
 The `scheduler_hints` block supports:
 
 * `group` - (Optional) A UUID of a Server Group. The instance will be placed
-    into that group.
+    into that group. See [reference](https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/compute_servergroup_v2)
+    for details on managing servergroup resources
 
 * `different_host` - (Optional) A list of instance UUIDs. The instance will
     be scheduled on a different host than all other instances.

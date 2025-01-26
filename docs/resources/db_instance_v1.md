@@ -56,8 +56,6 @@ The following arguments are supported:
 
 * `volume_type` - (Optional) Specifies the volume type to use. If you want to specify a volume type, you must also specify a volume size. Changing this creates new instance.
 
-* `availability_zone` - (Optional) The availability zone of the instance.
-
 * `datastore` - (Required) An array of database engine type and version. The datastore
     object structure is documented below. Changing this creates a new instance.
 
@@ -124,7 +122,6 @@ The following attributes are exported:
 * `name` - See Argument Reference above.
 * `size` - See Argument Reference above.
 * `volume_type` - See Argument Reference above.
-* `availability_zone` - See Argument Reference above.
 * `flavor_id` - See Argument Reference above.
 * `configuration_id` - See Argument Reference above.
 * `datastore/type` - See Argument Reference above.

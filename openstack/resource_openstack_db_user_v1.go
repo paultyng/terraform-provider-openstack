@@ -3,14 +3,13 @@ package openstack
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/gophercloud/gophercloud/openstack/db/v1/users"
+	"github.com/gophercloud/gophercloud/v2/openstack/db/v1/users"
 )
 
 func resourceDatabaseUserV1() *schema.Resource {
@@ -70,7 +69,7 @@ func resourceDatabaseUserV1() *schema.Resource {
 
 func resourceDatabaseUserV1Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	DatabaseV1Client, err := config.DatabaseV1Client(GetRegion(d, config))
+	DatabaseV1Client, err := config.DatabaseV1Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack database client: %s", err)
 	}
@@ -87,15 +86,15 @@ func resourceDatabaseUserV1Create(ctx context.Context, d *schema.ResourceData, m
 		Databases: expandDatabaseUserV1Databases(rawDatabases),
 	})
 
-	err = users.Create(DatabaseV1Client, instanceID, usersList).ExtractErr()
+	err = users.Create(ctx, DatabaseV1Client, instanceID, usersList).ExtractErr()
 	if err != nil {
 		return diag.Errorf("Error creating openstack_db_user_v1: %s", err)
 	}
 
-	stateConf := &resource.StateChangeConf{
+	stateConf := &retry.StateChangeConf{
 		Pending:    []string{"BUILD"},
 		Target:     []string{"ACTIVE"},
-		Refresh:    databaseUserV1StateRefreshFunc(DatabaseV1Client, instanceID, userName),
+		Refresh:    databaseUserV1StateRefreshFunc(ctx, DatabaseV1Client, instanceID, userName),
 		Timeout:    d.Timeout(schema.TimeoutCreate),
 		Delay:      10 * time.Second,
 		MinTimeout: 3 * time.Second,
@@ -112,22 +111,19 @@ func resourceDatabaseUserV1Create(ctx context.Context, d *schema.ResourceData, m
 	return resourceDatabaseUserV1Read(ctx, d, meta)
 }
 
-func resourceDatabaseUserV1Read(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceDatabaseUserV1Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	DatabaseV1Client, err := config.DatabaseV1Client(GetRegion(d, config))
+	DatabaseV1Client, err := config.DatabaseV1Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack database client: %s", err)
 	}
 
-	userID := strings.SplitN(d.Id(), "/", 2)
-	if len(userID) != 2 {
-		return diag.Errorf("Invalid openstack_db_user_v1 ID: %s", d.Id())
+	instanceID, userName, err := parsePairedIDs(d.Id(), "openstack_db_user_v1")
+	if err != nil {
+		return diag.FromErr(err)
 	}
 
-	instanceID := userID[0]
-	userName := userID[1]
-
-	exists, userObj, err := databaseUserV1Exists(DatabaseV1Client, instanceID, userName)
+	exists, userObj, err := databaseUserV1Exists(ctx, DatabaseV1Client, instanceID, userName)
 	if err != nil {
 		return diag.Errorf("Error checking if openstack_db_user_v1 %s exists: %s", d.Id(), err)
 	}
@@ -147,22 +143,19 @@ func resourceDatabaseUserV1Read(_ context.Context, d *schema.ResourceData, meta 
 	return nil
 }
 
-func resourceDatabaseUserV1Delete(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceDatabaseUserV1Delete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	DatabaseV1Client, err := config.DatabaseV1Client(GetRegion(d, config))
+	DatabaseV1Client, err := config.DatabaseV1Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack database client: %s", err)
 	}
 
-	userID := strings.SplitN(d.Id(), "/", 2)
-	if len(userID) != 2 {
-		return diag.Errorf("Invalid openstack_db_user_v1 ID: %s", d.Id())
+	instanceID, userName, err := parsePairedIDs(d.Id(), "openstack_db_user_v1")
+	if err != nil {
+		return diag.FromErr(err)
 	}
 
-	instanceID := userID[0]
-	userName := userID[1]
-
-	exists, _, err := databaseUserV1Exists(DatabaseV1Client, instanceID, userName)
+	exists, _, err := databaseUserV1Exists(ctx, DatabaseV1Client, instanceID, userName)
 	if err != nil {
 		return diag.Errorf("Error checking if openstack_db_user_v1 %s exists: %s", d.Id(), err)
 	}
@@ -171,9 +164,9 @@ func resourceDatabaseUserV1Delete(_ context.Context, d *schema.ResourceData, met
 		return nil
 	}
 
-	err = users.Delete(DatabaseV1Client, instanceID, userName).ExtractErr()
+	err = users.Delete(ctx, DatabaseV1Client, instanceID, userName).ExtractErr()
 	if err != nil {
-		return diag.Errorf("Error deleting openstack_db_user_v1 %s: %s", d.Id(), err)
+		return diag.FromErr(CheckDeleted(d, err, "Error deleting openstack_db_user_v1"))
 	}
 
 	return nil

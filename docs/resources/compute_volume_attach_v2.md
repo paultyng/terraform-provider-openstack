@@ -97,13 +97,13 @@ output "volume_devices" {
 ### Using Multiattach-enabled volumes
 
 Multiattach Volumes are dependent upon your OpenStack cloud and not all
-clouds support multiattach.
+clouds support multiattach. Multiattach volumes require a volume_type that has [multiattach enabled](https://docs.openstack.org/cinder/latest/admin/volume-multiattach.html#multiattach-volume-type).
 
 ```hcl
 resource "openstack_blockstorage_volume_v3" "volume_1" {
   name        = "volume_1"
   size        = 1
-  multiattach = true
+  volume_type = "multiattach" 
 }
 
 resource "openstack_compute_instance_v2" "instance_1" {
@@ -155,6 +155,10 @@ The following arguments are supported:
   to be detached and reattached indefinitely. Please use with caution.
 
 * `multiattach` - (Optional) Enable attachment of multiattach-capable volumes.
+
+* `tag` - (Optional) Add a device role tag that is applied to the volume when
+  attaching it to the VM. Changing this creates a new volume attachment with
+  the new tag. Requires microversion >= 2.49.
 
 * `vendor_options` - (Optional) Map of additional vendor-specific options.
   Supported options are described below.

@@ -67,7 +67,7 @@ resource "openstack_lb_l7rule_v2" "l7rule_1" {
 The following arguments are supported:
 
 * `region` - (Optional) The region in which to obtain the V2 Networking client.
-    A Networking client is needed to create an . If omitted, the
+    A Networking client is needed to create an L7 rule. If omitted, the
     `region` argument of the provider is used. Changing this creates a new
     L7 Rule.
 
@@ -78,7 +78,7 @@ The following arguments are supported:
 * `description` - (Optional) Human-readable description for the L7 Rule.
 
 * `type` - (Required) The L7 Rule type - can either be COOKIE, FILE\_TYPE, HEADER,
-    HOST\_NAME or PATH.
+    HOST\_NAME, PATH, SSL\_CONN\_HAS\_CERT, SSL\_VERIFY\_RESULT or SSL\_DN\_FIELD.
 
 * `compare_type` - (Required) The comparison type for the L7 rule - can either be
     CONTAINS, STARTS\_WITH, ENDS_WITH, EQUAL_TO or REGEX

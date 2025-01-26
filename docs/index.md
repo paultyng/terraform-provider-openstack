@@ -160,10 +160,6 @@ The following arguments are supported:
   Finally, set `auth_url` as the location of the Swift service. Note that this
   will only work when used with the OpenStack Object Storage resources.
 
-* `use_octavia` - (Optional) If set to `true`, API requests will go the Load Balancer
-  service (Octavia) instead of the Networking service (Neutron).
-  If omitted, the `OS_USE_OCTAVIA` environment variable is checked.
-
 * `disable_no_cache_header` - (Optional) If set to `true`, the HTTP
   `Cache-Control: no-cache` header will not be added by default to all API requests.
   If omitted this header is added to all API requests to force HTTP caches (if any)
@@ -222,6 +218,7 @@ Identity/Keystone service catalog. This provider supports:
 * `volume`: Block Storage / Cinder v1
 * `volumev2`: Block Storage / Cinder v2
 * `volumev3`: Block Storage / Cinder v3
+* `workflowv2`: Workflow / Mistral v2
 
 Please use this feature at your own risk. If you are unsure about needing
 to override an endpoint, you most likely do not need to override one.
@@ -262,11 +259,10 @@ A simple way of checking which minor versions are supported on your Openstack
 cloud is the following:
 
 ```shell
-export OS_TOKEN=`openstack token issue -c id -f value`
-curl -s -H "X-Auth-Token: $OS_TOKEN"  "https://example.com:9876/"
+export OCTAVIA_URL=`openstack endpoint list --interface public --service octavia -f value -c URL`
+export OS_TOKEN=`openstack token issue -f value -c id`
+curl -s -H "X-Auth-Token: $OS_TOKEN" "$OCTAVIA_URL" | jq -r '.versions[]|select(.status=="SUPPORTED")|.id' | tail -1
 ```
-
-
 
 ### Rackspace Compatibility
 
@@ -393,6 +389,61 @@ a Gophercloud but, please ask.
 If you require pulling in changes from an external package, such as Gophercloud,
 this provider uses [Go Modules](https://github.com/golang/go/wiki/Modules).
 
+### Ad-hoc testing against existing cloud
+
+If there is access to an existing cloud, developers can test changes on resources
+against that cloud. In order to do so:
+- Build the provider with your changes
+
+Build locally the provider including your changes with:
+```
+go build .
+```
+this should generate a `terraform-provider-openstack` binary.
+
+- Remove the Terraform Lock File 
+
+If there is already a terraform lock file, remove it with:
+```
+rm .terraform.lock.hcl
+```
+
+- Create or edit `.terraform.rc` as shown below:
+
+```
+provider_installation {
+  dev_overrides {
+    "registry.terraform.io/terraform-provider-openstack/openstack" = "/path/to/directory/where/the/provider/binary/is"
+  }
+  direct {}
+}
+```
+This configuration tells Terraform to use the provider binary at the specified path 
+instead of the one from the Terraform Registry. The direct {} block tells Terraform 
+to use the provider from the Terraform Registry if it’s not available locally. 
+Any other providers not specified in dev_overrides will still be downloaded from the 
+Terraform Registry.
+
+- Set Environment Variable for Terraform Configuration
+
+```
+export TF_CLI_CONFIG_FILE=~/.terraform.rc
+```
+
+- Run terraform
+
+```
+❯ terraform plan
+
+│ Warning: Provider development overrides are in effect
+│ 
+│ The following provider development overrides are set in the CLI configuration:
+│  - terraform-provider-openstack/openstack in /path/to/directory/where/the/provider/binary/is
+│ 
+| The behavior may therefore not match any released version of the provider and applying changes may cause the state to become incompatible with published releases.
+
+```
+
 ### Acceptance Tests
 
 Acceptance Tests are a crucial part of adding features or fixing a bug. Please
@@ -443,14 +494,20 @@ the feature or bug you're testing:
 * `OS_FW_ENVIRONMENT` - Required if you're working on the `openstack_fw_*`
   resources. Set this value to "1" to enable testing these resources.
 
-* `OS_VPN_ENVIRONMENT` - Required if your'e working on the `openstack_vpn_*`
+* `OS_VPN_ENVIRONMENT` - Required if you're working on the `openstack_vpn_*`
   resources. Set this value to "1" to enable testing these resources.
 
-* `OS_SFS_ENVIRONMENT` - Required if your'e working on the `openstack_openstack_sharedfilesystem_*`
+* `OS_SFS_ENVIRONMENT` - Required if you're working on the `openstack_sharedfilesystem_*`
   resources. Set this value to "1" to enable testing these resources.
 
 * `OS_HYPERVISOR_HOSTNAME` - Required if you're working on the `openstack_compute_hypervisor_v2`
   data source. Set this value to one valid hypervisor hostname to test this data source.
+
+* `OS_BGPVPN_ENVIRONMENT` - Required if you're working on the `openstack_bgpvpn_*`
+  resources. Set this value to "1" to enable testing these resources.
+
+* `OS_WORKFLOW_ENVIRONMENT` - Required if you're working on the `openstack_workflow_*`
+  resources. Set this value to "1" to enable testing these resources.
 
 We recommend only running the acceptance tests related to the feature or bug
 you're working on. To do this, run:

@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 )
 
 func TestUnitNetworkingSubnetV2AllocationPools(t *testing.T) {
@@ -68,40 +68,6 @@ func TestUnitExpandNetworkingSubnetV2AllocationPools(t *testing.T) {
 	}
 
 	actual := expandNetworkingSubnetV2AllocationPools(d.Get("allocation_pool").(*schema.Set).List())
-
-	assert.ElementsMatch(t, expected, actual)
-}
-
-func TestUnitExpandNetworkingSubnetV2HostRoutes(t *testing.T) {
-	r := resourceNetworkingSubnetV2()
-	d := r.TestResourceData()
-	d.SetId("1")
-
-	hostRoutes := []map[string]interface{}{
-		{
-			"destination_cidr": "192.168.0.0/24",
-			"next_hop":         "10.0.0.1",
-		},
-		{
-			"destination_cidr": "10.0.0.0/8",
-			"next_hop":         "192.168.0.1",
-		},
-	}
-
-	d.Set("host_routes", hostRoutes)
-
-	expected := []subnets.HostRoute{
-		{
-			DestinationCIDR: "192.168.0.0/24",
-			NextHop:         "10.0.0.1",
-		},
-		{
-			DestinationCIDR: "10.0.0.0/8",
-			NextHop:         "192.168.0.1",
-		},
-	}
-
-	actual := expandNetworkingSubnetV2HostRoutes(d.Get("host_routes").([]interface{}))
 
 	assert.ElementsMatch(t, expected, actual)
 }

@@ -1,15 +1,15 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/db/v1/databases"
-	"github.com/gophercloud/gophercloud/openstack/db/v1/instances"
+	"github.com/gophercloud/gophercloud/v2/openstack/db/v1/databases"
+	"github.com/gophercloud/gophercloud/v2/openstack/db/v1/instances"
 )
 
 func TestAccDatabaseV1Database_basic(t *testing.T) {
@@ -51,18 +51,18 @@ func testAccCheckDatabaseV1DatabaseExists(n string, instance *instances.Instance
 			return fmt.Errorf("No ID is set")
 		}
 
-		parts := strings.SplitN(rs.Primary.ID, "/", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("Malformed database name: %s", rs.Primary.ID)
+		_, userName, err := parsePairedIDs(rs.Primary.ID, "openstack_db_database_v1")
+		if err != nil {
+			return err
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		DatabaseV1Client, err := config.DatabaseV1Client(osRegionName)
+		DatabaseV1Client, err := config.DatabaseV1Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 		}
 
-		pages, err := databases.List(DatabaseV1Client, instance.ID).AllPages()
+		pages, err := databases.List(DatabaseV1Client, instance.ID).AllPages(context.TODO())
 		if err != nil {
 			return fmt.Errorf("Unable to retrieve databases: %s", err)
 		}
@@ -73,7 +73,7 @@ func testAccCheckDatabaseV1DatabaseExists(n string, instance *instances.Instance
 		}
 
 		for _, v := range allDatabases {
-			if v.Name == parts[1] {
+			if v.Name == userName {
 				*db = v
 				return nil
 			}
@@ -86,7 +86,7 @@ func testAccCheckDatabaseV1DatabaseExists(n string, instance *instances.Instance
 func testAccCheckDatabaseV1DatabaseDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
 
-	DatabaseV1Client, err := config.DatabaseV1Client(osRegionName)
+	DatabaseV1Client, err := config.DatabaseV1Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
@@ -96,12 +96,12 @@ func testAccCheckDatabaseV1DatabaseDestroy(s *terraform.State) error {
 			continue
 		}
 
-		parts := strings.SplitN(rs.Primary.ID, "/", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("Malformed database name: %s", rs.Primary.ID)
+		id, userName, err := parsePairedIDs(rs.Primary.ID, "openstack_db_database_v1")
+		if err != nil {
+			return err
 		}
 
-		pages, err := databases.List(DatabaseV1Client, parts[0]).AllPages()
+		pages, err := databases.List(DatabaseV1Client, id).AllPages(context.TODO())
 		if err != nil {
 			return nil
 		}
@@ -113,7 +113,7 @@ func testAccCheckDatabaseV1DatabaseDestroy(s *terraform.State) error {
 
 		var exists bool
 		for _, v := range allDatabases {
-			if v.Name == parts[1] {
+			if v.Name == userName {
 				exists = true
 			}
 		}

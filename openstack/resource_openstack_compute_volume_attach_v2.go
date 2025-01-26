@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 )
 
 func resourceComputeVolumeAttachV2() *schema.Resource {
@@ -60,6 +61,12 @@ func resourceComputeVolumeAttachV2() *schema.Resource {
 				ForceNew: true,
 			},
 
+			"tag": {
+				Type:     schema.TypeString,
+				Optional: true,
+				ForceNew: true,
+			},
+
 			"vendor_options": {
 				Type:     schema.TypeSet,
 				Optional: true,
@@ -82,7 +89,7 @@ func resourceComputeVolumeAttachV2() *schema.Resource {
 
 func resourceComputeVolumeAttachV2Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	computeClient, err := config.ComputeV2Client(GetRegion(d, config))
+	computeClient, err := config.ComputeV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack compute client: %s", err)
 	}
@@ -99,7 +106,7 @@ func resourceComputeVolumeAttachV2Create(ctx context.Context, d *schema.Resource
 		ignoreVolumeConfirmation = vendorOptions["ignore_volume_confirmation"].(bool)
 	}
 	if !ignoreVolumeConfirmation {
-		blockStorageClient, err = config.BlockStorageV3Client(GetRegion(d, config))
+		blockStorageClient, err = config.BlockStorageV3Client(ctx, GetRegion(d, config))
 		if err != nil {
 			return diag.Errorf("Error creating OpenStack block storage client: %s", err)
 		}
@@ -118,23 +125,30 @@ func resourceComputeVolumeAttachV2Create(ctx context.Context, d *schema.Resource
 		VolumeID: volumeID,
 	}
 
+	// tag requires nova microversion 2.49. Only set when specified.
+	if v, ok := d.GetOk("tag"); ok {
+		tag := v.(string)
+		attachOpts.Tag = tag
+		computeClient.Microversion = computeV2InstanceBlockDeviceVolumeAttachTagsMicroversion
+	}
+
 	log.Printf("[DEBUG] openstack_compute_volume_attach_v2 attach options %s: %#v", instanceID, attachOpts)
 
 	multiattach := d.Get("multiattach").(bool)
 	if multiattach {
-		computeClient.Microversion = "2.60"
+		computeClient.Microversion = computeV2InstanceBlockDeviceMultiattachMicroversion
 	}
 
 	var attachment *volumeattach.VolumeAttachment
 	timeout := d.Timeout(schema.TimeoutCreate)
-	err = resource.RetryContext(ctx, timeout, func() *resource.RetryError {
-		attachment, err = volumeattach.Create(computeClient, instanceID, attachOpts).Extract()
+	err = retry.RetryContext(ctx, timeout, func() *retry.RetryError {
+		attachment, err = volumeattach.Create(ctx, computeClient, instanceID, attachOpts).Extract()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault400); ok && multiattach {
-				return resource.RetryableError(err)
+			if gophercloud.ResponseCodeIs(err, http.StatusBadRequest) && multiattach {
+				return retry.RetryableError(err)
 			}
 
-			return resource.NonRetryableError(err)
+			return retry.NonRetryableError(err)
 		}
 
 		return nil
@@ -144,10 +158,10 @@ func resourceComputeVolumeAttachV2Create(ctx context.Context, d *schema.Resource
 		return diag.Errorf("Error creating openstack_compute_volume_attach_v2 %s: %s", instanceID, err)
 	}
 
-	stateConf := &resource.StateChangeConf{
+	stateConf := &retry.StateChangeConf{
 		Pending:    []string{"ATTACHING"},
 		Target:     []string{"ATTACHED"},
-		Refresh:    computeVolumeAttachV2AttachFunc(computeClient, blockStorageClient, instanceID, attachment.ID, volumeID),
+		Refresh:    computeVolumeAttachV2AttachFunc(ctx, computeClient, blockStorageClient, instanceID, attachment.ID, volumeID),
 		Timeout:    d.Timeout(schema.TimeoutCreate),
 		Delay:      5 * time.Second,
 		MinTimeout: 3 * time.Second,
@@ -166,19 +180,19 @@ func resourceComputeVolumeAttachV2Create(ctx context.Context, d *schema.Resource
 	return resourceComputeVolumeAttachV2Read(ctx, d, meta)
 }
 
-func resourceComputeVolumeAttachV2Read(_ context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+func resourceComputeVolumeAttachV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	computeClient, err := config.ComputeV2Client(GetRegion(d, config))
+	computeClient, err := config.ComputeV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack compute client: %s", err)
 	}
 
-	instanceID, attachmentID, err := computeVolumeAttachV2ParseID(d.Id())
+	instanceID, attachmentID, err := parsePairedIDs(d.Id(), "openstack_compute_volume_attach_v2")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	attachment, err := volumeattach.Get(computeClient, instanceID, attachmentID).Extract()
+	attachment, err := volumeattach.Get(ctx, computeClient, instanceID, attachmentID).Extract()
 	if err != nil {
 		return diag.FromErr(CheckDeleted(d, err, "Error retrieving openstack_compute_volume_attach_v2"))
 	}
@@ -195,20 +209,20 @@ func resourceComputeVolumeAttachV2Read(_ context.Context, d *schema.ResourceData
 
 func resourceComputeVolumeAttachV2Delete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	computeClient, err := config.ComputeV2Client(GetRegion(d, config))
+	computeClient, err := config.ComputeV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack compute client: %s", err)
 	}
 
-	instanceID, attachmentID, err := computeVolumeAttachV2ParseID(d.Id())
+	instanceID, attachmentID, err := parsePairedIDs(d.Id(), "openstack_compute_volume_attach_v2")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	stateConf := &resource.StateChangeConf{
+	stateConf := &retry.StateChangeConf{
 		Pending:    []string{""},
 		Target:     []string{"DETACHED"},
-		Refresh:    computeVolumeAttachV2DetachFunc(computeClient, instanceID, attachmentID),
+		Refresh:    computeVolumeAttachV2DetachFunc(ctx, computeClient, instanceID, attachmentID),
 		Timeout:    d.Timeout(schema.TimeoutDelete),
 		Delay:      5 * time.Second,
 		MinTimeout: 3 * time.Second,

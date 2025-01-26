@@ -1,18 +1,19 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/portsecurity"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/qos/policies"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/security/groups"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/networks"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/ports"
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/portsecurity"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/qos/policies"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/networks"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/ports"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 )
 
 type testPortWithExtensions struct {
@@ -476,6 +477,14 @@ func TestAccNetworkingV2Port_noFixedIP(t *testing.T) {
 					testAccCheckNetworkingV2PortExists("openstack_networking_port_v2.port_1", &port),
 					resource.TestCheckResourceAttr(
 						"openstack_networking_port_v2.port_1", "all_fixed_ips.#", "2"),
+				),
+			},
+			{
+				Config: testAccNetworkingV2PortNoFixedIP4,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckNetworkingV2PortExists("openstack_networking_port_v2.port_1", &port),
+					resource.TestCheckResourceAttr(
+						"openstack_networking_port_v2.port_1", "all_fixed_ips.#", "0"),
 				),
 			},
 			{
@@ -1003,7 +1012,7 @@ func TestAccNetworkingV2Port_qos_policy_update(t *testing.T) {
 
 func testAccCheckNetworkingV2PortDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	networkingClient, err := config.NetworkingV2Client(osRegionName)
+	networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -1013,7 +1022,7 @@ func testAccCheckNetworkingV2PortDestroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := ports.Get(networkingClient, rs.Primary.ID).Extract()
+		_, err := ports.Get(context.TODO(), networkingClient, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("Port still exists")
 		}
@@ -1034,12 +1043,12 @@ func testAccCheckNetworkingV2PortExists(n string, port *ports.Port) resource.Tes
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		networkingClient, err := config.NetworkingV2Client(osRegionName)
+		networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 		}
 
-		found, err := ports.Get(networkingClient, rs.Primary.ID).Extract()
+		found, err := ports.Get(context.TODO(), networkingClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -1067,13 +1076,13 @@ func testAccCheckNetworkingV2PortWithExtensionsExists(
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		networkingClient, err := config.NetworkingV2Client(osRegionName)
+		networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 		}
 
 		var p testPortWithExtensions
-		err = ports.Get(networkingClient, rs.Primary.ID).ExtractInto(&p)
+		err = ports.Get(context.TODO(), networkingClient, rs.Primary.ID).ExtractInto(&p)
 		if err != nil {
 			return err
 		}
@@ -1253,7 +1262,7 @@ resource "openstack_networking_subnet_v2" "vrrp_subnet" {
   ip_version = 4
   network_id = "${openstack_networking_network_v2.vrrp_network.id}"
 
-  allocation_pools {
+  allocation_pool {
     start = "10.0.0.2"
     end = "10.0.0.200"
   }
@@ -1325,7 +1334,7 @@ resource "openstack_networking_subnet_v2" "vrrp_subnet" {
   ip_version = 4
   network_id = "${openstack_networking_network_v2.vrrp_network.id}"
 
-  allocation_pools {
+  allocation_pool {
     start = "10.0.0.2"
     end = "10.0.0.200"
   }
@@ -1396,7 +1405,7 @@ resource "openstack_networking_subnet_v2" "vrrp_subnet" {
   ip_version = 4
   network_id = "${openstack_networking_network_v2.vrrp_network.id}"
 
-  allocation_pools {
+  allocation_pool {
     start = "10.0.0.2"
     end = "10.0.0.200"
   }
@@ -1468,7 +1477,7 @@ resource "openstack_networking_subnet_v2" "vrrp_subnet" {
   ip_version = 4
   network_id = "${openstack_networking_network_v2.vrrp_network.id}"
 
-  allocation_pools {
+  allocation_pool {
     start = "10.0.0.2"
     end = "10.0.0.200"
   }
@@ -1535,7 +1544,7 @@ resource "openstack_networking_subnet_v2" "vrrp_subnet" {
   ip_version = 4
   network_id = "${openstack_networking_network_v2.vrrp_network.id}"
 
-  allocation_pools {
+  allocation_pool {
     start = "10.0.0.2"
     end = "10.0.0.200"
   }
@@ -2022,7 +2031,7 @@ resource "openstack_networking_subnet_v2" "vrrp_subnet" {
   ip_version = 4
   network_id = "${openstack_networking_network_v2.vrrp_network.id}"
 
-  allocation_pools {
+  allocation_pool {
     start = "10.0.0.2"
     end = "10.0.0.200"
   }
@@ -2152,6 +2161,27 @@ resource "openstack_networking_port_v2" "port_1" {
     subnet_id =  "${openstack_networking_subnet_v2.subnet_1.id}"
     ip_address = "192.168.199.24"
   }
+}
+`
+
+const testAccNetworkingV2PortNoFixedIP4 = `
+resource "openstack_networking_network_v2" "network_1" {
+  name = "network_1"
+  admin_state_up = "true"
+}
+
+resource "openstack_networking_subnet_v2" "subnet_1" {
+  name = "subnet_1"
+  cidr = "192.168.199.0/24"
+  ip_version = 4
+  network_id = "${openstack_networking_network_v2.network_1.id}"
+}
+
+resource "openstack_networking_port_v2" "port_1" {
+  name = "port_1"
+  admin_state_up = "true"
+  network_id = "${openstack_networking_network_v2.network_1.id}"
+  fixed_ip {}
 }
 `
 

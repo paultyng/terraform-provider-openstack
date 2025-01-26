@@ -3,16 +3,18 @@ package openstack
 import (
 	"context"
 	"os"
+	"runtime/debug"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/logging"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-	"github.com/hashicorp/terraform-plugin-sdk/v2/meta"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/utils/terraform/auth"
-	"github.com/gophercloud/utils/terraform/mutexkv"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/utils/v2/terraform/auth"
+	"github.com/gophercloud/utils/v2/terraform/mutexkv"
 )
+
+var version = "dev"
 
 // Use openstackbase.Config as the base/foundation of this provider's
 // Config struct.
@@ -208,13 +210,6 @@ func Provider() *schema.Provider {
 				Description: descriptions["swauth"],
 			},
 
-			"use_octavia": {
-				Type:        schema.TypeBool,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("OS_USE_OCTAVIA", true),
-				Description: descriptions["use_octavia"],
-			},
-
 			"delayed_auth": {
 				Type:        schema.TypeBool,
 				Optional:    true,
@@ -266,9 +261,7 @@ func Provider() *schema.Provider {
 
 		DataSourcesMap: map[string]*schema.Resource{
 			"openstack_blockstorage_availability_zones_v3":       dataSourceBlockStorageAvailabilityZonesV3(),
-			"openstack_blockstorage_snapshot_v2":                 dataSourceBlockStorageSnapshotV2(),
 			"openstack_blockstorage_snapshot_v3":                 dataSourceBlockStorageSnapshotV3(),
-			"openstack_blockstorage_volume_v2":                   dataSourceBlockStorageVolumeV2(),
 			"openstack_blockstorage_volume_v3":                   dataSourceBlockStorageVolumeV3(),
 			"openstack_blockstorage_quotaset_v3":                 dataSourceBlockStorageQuotasetV3(),
 			"openstack_compute_aggregate_v2":                     dataSourceComputeAggregateV2(),
@@ -284,11 +277,11 @@ func Provider() *schema.Provider {
 			"openstack_containerinfra_cluster_v1":                dataSourceContainerInfraCluster(),
 			"openstack_dns_zone_v2":                              dataSourceDNSZoneV2(),
 			"openstack_fw_group_v2":                              dataSourceFWGroupV2(),
-			"openstack_fw_policy_v1":                             dataSourceFWPolicyV1(),
 			"openstack_fw_policy_v2":                             dataSourceFWPolicyV2(),
 			"openstack_fw_rule_v2":                               dataSourceFWRuleV2(),
 			"openstack_identity_role_v3":                         dataSourceIdentityRoleV3(),
 			"openstack_identity_project_v3":                      dataSourceIdentityProjectV3(),
+			"openstack_identity_project_ids_v3":                  dataSourceIdentityProjectIdsV3(),
 			"openstack_identity_user_v3":                         dataSourceIdentityUserV3(),
 			"openstack_identity_auth_scope_v3":                   dataSourceIdentityAuthScopeV3(),
 			"openstack_identity_endpoint_v3":                     dataSourceIdentityEndpointV3(),
@@ -318,17 +311,15 @@ func Provider() *schema.Provider {
 			"openstack_sharedfilesystem_snapshot_v2":             dataSourceSharedFilesystemSnapshotV2(),
 			"openstack_keymanager_secret_v1":                     dataSourceKeyManagerSecretV1(),
 			"openstack_keymanager_container_v1":                  dataSourceKeyManagerContainerV1(),
+			"openstack_loadbalancer_flavor_v2":                   dataSourceLBFlavorV2(),
+			"openstack_workflow_workflow_v2":                     dataSourceWorkflowWorkflowV2(),
 		},
 
 		ResourcesMap: map[string]*schema.Resource{
 			"openstack_blockstorage_qos_association_v3":          resourceBlockStorageQosAssociationV3(),
 			"openstack_blockstorage_qos_v3":                      resourceBlockStorageQosV3(),
-			"openstack_blockstorage_quotaset_v2":                 resourceBlockStorageQuotasetV2(),
 			"openstack_blockstorage_quotaset_v3":                 resourceBlockStorageQuotasetV3(),
-			"openstack_blockstorage_volume_v1":                   resourceBlockStorageVolumeV1(),
-			"openstack_blockstorage_volume_v2":                   resourceBlockStorageVolumeV2(),
 			"openstack_blockstorage_volume_v3":                   resourceBlockStorageVolumeV3(),
-			"openstack_blockstorage_volume_attach_v2":            resourceBlockStorageVolumeAttachV2(),
 			"openstack_blockstorage_volume_attach_v3":            resourceBlockStorageVolumeAttachV3(),
 			"openstack_blockstorage_volume_type_access_v3":       resourceBlockstorageVolumeTypeAccessV3(),
 			"openstack_blockstorage_volume_type_v3":              resourceBlockStorageVolumeTypeV3(),
@@ -338,11 +329,8 @@ func Provider() *schema.Provider {
 			"openstack_compute_instance_v2":                      resourceComputeInstanceV2(),
 			"openstack_compute_interface_attach_v2":              resourceComputeInterfaceAttachV2(),
 			"openstack_compute_keypair_v2":                       resourceComputeKeypairV2(),
-			"openstack_compute_secgroup_v2":                      resourceComputeSecGroupV2(),
 			"openstack_compute_servergroup_v2":                   resourceComputeServerGroupV2(),
 			"openstack_compute_quotaset_v2":                      resourceComputeQuotasetV2(),
-			"openstack_compute_floatingip_v2":                    resourceComputeFloatingIPV2(),
-			"openstack_compute_floatingip_associate_v2":          resourceComputeFloatingIPAssociateV2(),
 			"openstack_compute_volume_attach_v2":                 resourceComputeVolumeAttachV2(),
 			"openstack_containerinfra_nodegroup_v1":              resourceContainerInfraNodeGroupV1(),
 			"openstack_containerinfra_clustertemplate_v1":        resourceContainerInfraClusterTemplateV1(),
@@ -355,11 +343,8 @@ func Provider() *schema.Provider {
 			"openstack_dns_zone_v2":                              resourceDNSZoneV2(),
 			"openstack_dns_transfer_request_v2":                  resourceDNSTransferRequestV2(),
 			"openstack_dns_transfer_accept_v2":                   resourceDNSTransferAcceptV2(),
-			"openstack_fw_firewall_v1":                           resourceFWFirewallV1(),
 			"openstack_fw_group_v2":                              resourceFWGroupV2(),
-			"openstack_fw_policy_v1":                             resourceFWPolicyV1(),
 			"openstack_fw_policy_v2":                             resourceFWPolicyV2(),
-			"openstack_fw_rule_v1":                               resourceFWRuleV1(),
 			"openstack_fw_rule_v2":                               resourceFWRuleV2(),
 			"openstack_identity_endpoint_v3":                     resourceIdentityEndpointV3(),
 			"openstack_identity_project_v3":                      resourceIdentityProjectV3(),
@@ -375,10 +360,7 @@ func Provider() *schema.Provider {
 			"openstack_images_image_v2":                          resourceImagesImageV2(),
 			"openstack_images_image_access_v2":                   resourceImagesImageAccessV2(),
 			"openstack_images_image_access_accept_v2":            resourceImagesImageAccessAcceptV2(),
-			"openstack_lb_member_v1":                             resourceLBMemberV1(),
-			"openstack_lb_monitor_v1":                            resourceLBMonitorV1(),
-			"openstack_lb_pool_v1":                               resourceLBPoolV1(),
-			"openstack_lb_vip_v1":                                resourceLBVipV1(),
+			"openstack_lb_flavorprofile_v2":                      resourceLoadBalancerFlavorProfileV2(),
 			"openstack_lb_loadbalancer_v2":                       resourceLoadBalancerV2(),
 			"openstack_lb_listener_v2":                           resourceListenerV2(),
 			"openstack_lb_pool_v2":                               resourcePoolV2(),
@@ -410,6 +392,7 @@ func Provider() *schema.Provider {
 			"openstack_networking_addressscope_v2":               resourceNetworkingAddressScopeV2(),
 			"openstack_networking_trunk_v2":                      resourceNetworkingTrunkV2(),
 			"openstack_networking_portforwarding_v2":             resourceNetworkingPortForwardingV2(),
+			"openstack_objectstorage_account_v1":                 resourceObjectStorageAccountV1(),
 			"openstack_objectstorage_container_v1":               resourceObjectStorageContainerV1(),
 			"openstack_objectstorage_object_v1":                  resourceObjectStorageObjectV1(),
 			"openstack_objectstorage_tempurl_v1":                 resourceObjectstorageTempurlV1(),
@@ -426,17 +409,21 @@ func Provider() *schema.Provider {
 			"openstack_keymanager_secret_v1":                     resourceKeyManagerSecretV1(),
 			"openstack_keymanager_container_v1":                  resourceKeyManagerContainerV1(),
 			"openstack_keymanager_order_v1":                      resourceKeyManagerOrderV1(),
+			"openstack_bgpvpn_v2":                                resourceBGPVPNV2(),
+			"openstack_bgpvpn_network_associate_v2":              resourceBGPVPNNetworkAssociateV2(),
+			"openstack_bgpvpn_router_associate_v2":               resourceBGPVPNRouterAssociateV2(),
+			"openstack_bgpvpn_port_associate_v2":                 resourceBGPVPNPortAssociateV2(),
 		},
 	}
 
-	provider.ConfigureContextFunc = func(_ context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	provider.ConfigureContextFunc = func(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 		terraformVersion := provider.TerraformVersion
 		if terraformVersion == "" {
 			// Terraform 0.12 introduced this field to the protocol
 			// We can therefore assume that if it's missing it's 0.10 or 0.11
 			terraformVersion = "0.11+compatible"
 		}
-		return configureProvider(d, terraformVersion)
+		return configureProvider(ctx, d, terraformVersion)
 	}
 
 	return provider
@@ -504,9 +491,6 @@ func init() {
 		"swauth": "Use Swift's authentication system instead of Keystone. Only used for\n" +
 			"interaction with Swift.",
 
-		"use_octavia": "If set to `true`, API requests will go the Load Balancer\n" +
-			"service (Octavia) instead of the Networking service (Neutron).",
-
 		"disable_no_cache_header": "If set to `true`, the HTTP `Cache-Control: no-cache` header will not be added by default to all API requests.",
 
 		"delayed_auth": "If set to `false`, OpenStack authorization will be perfomed,\n" +
@@ -521,7 +505,22 @@ func init() {
 	}
 }
 
-func configureProvider(d *schema.ResourceData, terraformVersion string) (interface{}, diag.Diagnostics) {
+func getSDKVersion() string {
+	buildInfo, ok := debug.ReadBuildInfo()
+	if !ok {
+		return ""
+	}
+
+	for _, v := range buildInfo.Deps {
+		if v.Path == "github.com/hashicorp/terraform-plugin-sdk/v2" {
+			return v.Version
+		}
+	}
+
+	return ""
+}
+
+func configureProvider(ctx context.Context, d *schema.ResourceData, terraformVersion string) (interface{}, diag.Diagnostics) {
 	enableLogging := d.Get("enable_logging").(bool)
 	if !enableLogging {
 		// enforce logging (similar to OS_DEBUG) when TF_LOG is 'DEBUG' or 'TRACE'
@@ -560,29 +559,29 @@ func configureProvider(d *schema.ResourceData, terraformVersion string) (interfa
 			UserDomainName:              d.Get("user_domain_name").(string),
 			Username:                    d.Get("user_name").(string),
 			UserID:                      d.Get("user_id").(string),
+			UseOctavia:                  true,
 			ApplicationCredentialID:     d.Get("application_credential_id").(string),
 			ApplicationCredentialName:   d.Get("application_credential_name").(string),
 			ApplicationCredentialSecret: d.Get("application_credential_secret").(string),
-			UseOctavia:                  d.Get("use_octavia").(bool),
 			DelayedAuth:                 d.Get("delayed_auth").(bool),
 			AllowReauth:                 d.Get("allow_reauth").(bool),
 			AuthOpts:                    authOpts,
 			MaxRetries:                  d.Get("max_retries").(int),
 			DisableNoCacheHeader:        d.Get("disable_no_cache_header").(bool),
 			TerraformVersion:            terraformVersion,
-			SDKVersion:                  meta.SDKVersionString(),
+			SDKVersion:                  getSDKVersion() + " Terraform Provider OpenStack/" + version,
 			MutexKV:                     mutexkv.NewMutexKV(),
 			EnableLogger:                enableLogging,
 		},
 	}
 
-	v, ok := d.GetOkExists("insecure")
+	v, ok := getOkExists(d, "insecure")
 	if ok {
 		insecure := v.(bool)
 		config.Insecure = &insecure
 	}
 
-	if err := config.LoadAndValidate(); err != nil {
+	if err := config.LoadAndValidate(ctx); err != nil {
 		return nil, diag.FromErr(err)
 	}
 

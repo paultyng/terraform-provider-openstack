@@ -1,13 +1,14 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/lbaas_v2/pools"
+	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 )
 
 func TestAccLBV2Member_basic(t *testing.T) {
@@ -28,6 +29,11 @@ func TestAccLBV2Member_basic(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckLBV2MemberExists("openstack_lb_member_v2.member_1", &member1),
 					testAccCheckLBV2MemberExists("openstack_lb_member_v2.member_2", &member2),
+					testAccCheckLBV2MemberHasTag("openstack_lb_member_v2.member_1", "foo"),
+					testAccCheckLBV2MemberTagCount("openstack_lb_member_v2.member_1", 1),
+					testAccCheckLBV2MemberHasTag("openstack_lb_member_v2.member_2", "foo"),
+					testAccCheckLBV2MemberTagCount("openstack_lb_member_v2.member_2", 1),
+					testAccCheckLBV2MemberExists("openstack_lb_member_v2.member_2", &member2),
 					resource.TestCheckResourceAttr("openstack_lb_member_v2.member_1", "backup", "true"),
 				),
 			},
@@ -37,6 +43,10 @@ func TestAccLBV2Member_basic(t *testing.T) {
 					resource.TestCheckResourceAttr("openstack_lb_member_v2.member_1", "weight", "10"),
 					resource.TestCheckResourceAttr("openstack_lb_member_v2.member_1", "backup", "false"),
 					resource.TestCheckResourceAttr("openstack_lb_member_v2.member_2", "weight", "15"),
+					testAccCheckLBV2MemberHasTag("openstack_lb_member_v2.member_1", "bar"),
+					testAccCheckLBV2MemberTagCount("openstack_lb_member_v2.member_1", 2),
+					testAccCheckLBV2MemberHasTag("openstack_lb_member_v2.member_2", "bar"),
+					testAccCheckLBV2MemberTagCount("openstack_lb_member_v2.member_2", 1),
 				),
 			},
 		},
@@ -52,7 +62,6 @@ func TestAccLBV2Member_monitor(t *testing.T) {
 			testAccPreCheck(t)
 			testAccPreCheckNonAdminOnly(t)
 			testAccPreCheckLB(t)
-			testAccPreCheckUseOctavia(t)
 		},
 		ProviderFactories: testAccProviders,
 		CheckDestroy:      testAccCheckLBV2MemberDestroy,
@@ -81,9 +90,81 @@ func TestAccLBV2Member_monitor(t *testing.T) {
 	})
 }
 
+func testAccCheckLBV2MemberHasTag(n, tag string) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No ID is set")
+		}
+
+		config := testAccProvider.Meta().(*Config)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
+		if err != nil {
+			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
+		}
+
+		poolID := rs.Primary.Attributes["pool_id"]
+		found, err := pools.GetMember(context.TODO(), lbClient, poolID, rs.Primary.ID).Extract()
+		if err != nil {
+			return err
+		}
+
+		if found.ID != rs.Primary.ID {
+			return fmt.Errorf("Member not found")
+		}
+
+		for _, v := range found.Tags {
+			if tag == v {
+				return nil
+			}
+		}
+
+		return fmt.Errorf("Tag not found: %s", tag)
+	}
+}
+
+func testAccCheckLBV2MemberTagCount(n string, expected int) resource.TestCheckFunc {
+	return func(s *terraform.State) error {
+		rs, ok := s.RootModule().Resources[n]
+		if !ok {
+			return fmt.Errorf("Not found: %s", n)
+		}
+
+		if rs.Primary.ID == "" {
+			return fmt.Errorf("No ID is set")
+		}
+
+		config := testAccProvider.Meta().(*Config)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
+		if err != nil {
+			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
+		}
+
+		poolID := rs.Primary.Attributes["pool_id"]
+		found, err := pools.GetMember(context.TODO(), lbClient, poolID, rs.Primary.ID).Extract()
+		if err != nil {
+			return err
+		}
+
+		if found.ID != rs.Primary.ID {
+			return fmt.Errorf("Member not found")
+		}
+
+		if len(found.Tags) != expected {
+			return fmt.Errorf("Expecting %d tags, found %d", expected, len(found.Tags))
+		}
+
+		return nil
+	}
+}
+
 func testAccCheckLBV2MemberDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	lbClient, err := chooseLBV2AccTestClient(config, osRegionName)
+	lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
 	}
@@ -94,7 +175,7 @@ func testAccCheckLBV2MemberDestroy(s *terraform.State) error {
 		}
 
 		poolID := rs.Primary.Attributes["pool_id"]
-		_, err := pools.GetMember(lbClient, poolID, rs.Primary.ID).Extract()
+		_, err := pools.GetMember(context.TODO(), lbClient, poolID, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("Member still exists: %s", rs.Primary.ID)
 		}
@@ -115,13 +196,13 @@ func testAccCheckLBV2MemberExists(n string, member *pools.Member) resource.TestC
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		lbClient, err := chooseLBV2AccTestClient(config, osRegionName)
+		lbClient, err := config.LoadBalancerV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack load balancing client: %s", err)
 		}
 
 		poolID := rs.Primary.Attributes["pool_id"]
-		found, err := pools.GetMember(lbClient, poolID, rs.Primary.ID).Extract()
+		found, err := pools.GetMember(context.TODO(), lbClient, poolID, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -182,6 +263,7 @@ resource "openstack_lb_member_v2" "member_1" {
   subnet_id = "${openstack_networking_subnet_v2.subnet_1.id}"
   weight = 0
   backup = true
+  tags = ["foo"]
 
   timeouts {
     create = "5m"
@@ -195,6 +277,7 @@ resource "openstack_lb_member_v2" "member_2" {
   protocol_port = 8080
   pool_id = "${openstack_lb_pool_v2.pool_1.id}"
   subnet_id = "${openstack_networking_subnet_v2.subnet_1.id}"
+  tags = ["foo"]
 
   timeouts {
     create = "5m"
@@ -250,6 +333,7 @@ resource "openstack_lb_member_v2" "member_1" {
   pool_id = "${openstack_lb_pool_v2.pool_1.id}"
   subnet_id = "${openstack_networking_subnet_v2.subnet_1.id}"
   backup = false
+  tags = ["foo", "bar"]
 
   timeouts {
     create = "5m"
@@ -265,6 +349,7 @@ resource "openstack_lb_member_v2" "member_2" {
   admin_state_up = "true"
   pool_id = "${openstack_lb_pool_v2.pool_1.id}"
   subnet_id = "${openstack_networking_subnet_v2.subnet_1.id}"
+  tags = ["bar"]
 
   timeouts {
     create = "5m"

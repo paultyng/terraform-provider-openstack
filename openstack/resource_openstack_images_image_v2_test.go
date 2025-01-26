@@ -1,13 +1,14 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/images"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/images"
 )
 
 func TestAccImagesImageV2_basic(t *testing.T) {
@@ -278,9 +279,51 @@ func TestAccImagesImageV2_webdownload(t *testing.T) {
 	})
 }
 
+func TestAccImagesImageV2_decompress_xz(t *testing.T) {
+	var image images.Image
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckImagesImageV2Destroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccImagesImageV2DecompressOctetStreamXZ,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckImagesImageV2Exists("openstack_images_image_v2.image_xz", &image),
+				),
+			},
+		},
+	})
+}
+
+func TestAccImagesImageV2_decompress_zst(t *testing.T) {
+	var image images.Image
+
+	resource.Test(t, resource.TestCase{
+		PreCheck: func() {
+			testAccPreCheck(t)
+			testAccPreCheckNonAdminOnly(t)
+		},
+		ProviderFactories: testAccProviders,
+		CheckDestroy:      testAccCheckImagesImageV2Destroy,
+		Steps: []resource.TestStep{
+			{
+				Config: testAccImagesImageV2DecompressOctetStreamZST,
+				Check: resource.ComposeTestCheckFunc(
+					testAccCheckImagesImageV2Exists("openstack_images_image_v2.image_zst", &image),
+				),
+			},
+		},
+	})
+}
+
 func testAccCheckImagesImageV2Destroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	imageClient, err := config.ImageV2Client(osRegionName)
+	imageClient, err := config.ImageV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack Image: %s", err)
 	}
@@ -290,7 +333,7 @@ func testAccCheckImagesImageV2Destroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := images.Get(imageClient, rs.Primary.ID).Extract()
+		_, err := images.Get(context.TODO(), imageClient, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("Image still exists")
 		}
@@ -311,12 +354,12 @@ func testAccCheckImagesImageV2Exists(n string, image *images.Image) resource.Tes
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		imageClient, err := config.ImageV2Client(osRegionName)
+		imageClient, err := config.ImageV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack Image: %s", err)
 		}
 
-		found, err := images.Get(imageClient, rs.Primary.ID).Extract()
+		found, err := images.Get(context.TODO(), imageClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -343,12 +386,12 @@ func testAccCheckImagesImageV2HasTag(n, tag string) resource.TestCheckFunc {
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		imageClient, err := config.ImageV2Client(osRegionName)
+		imageClient, err := config.ImageV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack Image: %s", err)
 		}
 
-		found, err := images.Get(imageClient, rs.Primary.ID).Extract()
+		found, err := images.Get(context.TODO(), imageClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -379,12 +422,12 @@ func testAccCheckImagesImageV2TagCount(n string, expected int) resource.TestChec
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		imageClient, err := config.ImageV2Client(osRegionName)
+		imageClient, err := config.ImageV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack Image: %s", err)
 		}
 
-		found, err := images.Get(imageClient, rs.Primary.ID).Extract()
+		found, err := images.Get(context.TODO(), imageClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}
@@ -561,4 +604,22 @@ const testAccImagesImageV2Webdownload = `
       timeouts {
         create = "10m"
       }
+  }`
+
+const testAccImagesImageV2DecompressOctetStreamXZ = `
+  resource "openstack_images_image_v2" "image_xz" {
+    name             = "openstack-xz"
+    image_source_url = "https://github.com/siderolabs/talos/releases/download/v1.6.6/openstack-amd64.raw.xz"
+    decompress       = true
+    container_format = "bare"
+    disk_format      = "raw"
+  }`
+
+const testAccImagesImageV2DecompressOctetStreamZST = `
+  resource "openstack_images_image_v2" "image_zst" {
+    name             = "openstack-zst"
+    image_source_url = "https://github.com/siderolabs/talos/releases/download/v1.8.0-alpha.1/openstack-amd64.raw.zst"
+    decompress       = true
+    container_format = "bare"
+    disk_format      = "raw"
   }`

@@ -1,13 +1,14 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/volumeattach"
+	"github.com/gophercloud/gophercloud/v2/openstack/compute/v2/volumeattach"
 )
 
 func TestAccComputeV2VolumeAttach_basic(t *testing.T) {
@@ -76,7 +77,7 @@ func TestAccComputeV2VolumeAttach_ignore_volume_confirmation(t *testing.T) {
 
 func testAccCheckComputeV2VolumeAttachDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	computeClient, err := config.ComputeV2Client(osRegionName)
+	computeClient, err := config.ComputeV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 	}
@@ -86,12 +87,12 @@ func testAccCheckComputeV2VolumeAttachDestroy(s *terraform.State) error {
 			continue
 		}
 
-		instanceID, volumeID, err := computeVolumeAttachV2ParseID(rs.Primary.ID)
+		instanceID, volumeID, err := parsePairedIDs(rs.Primary.ID, "openstack_compute_volume_attach_v2")
 		if err != nil {
 			return err
 		}
 
-		_, err = volumeattach.Get(computeClient, instanceID, volumeID).Extract()
+		_, err = volumeattach.Get(context.TODO(), computeClient, instanceID, volumeID).Extract()
 		if err == nil {
 			return fmt.Errorf("Volume attachment still exists")
 		}
@@ -112,17 +113,17 @@ func testAccCheckComputeV2VolumeAttachExists(n string, va *volumeattach.VolumeAt
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		computeClient, err := config.ComputeV2Client(osRegionName)
+		computeClient, err := config.ComputeV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack compute client: %s", err)
 		}
 
-		instanceID, volumeID, err := computeVolumeAttachV2ParseID(rs.Primary.ID)
+		instanceID, volumeID, err := parsePairedIDs(rs.Primary.ID, "openstack_compute_volume_attach_v2")
 		if err != nil {
 			return err
 		}
 
-		found, err := volumeattach.Get(computeClient, instanceID, volumeID).Extract()
+		found, err := volumeattach.Get(context.TODO(), computeClient, instanceID, volumeID).Extract()
 		if err != nil {
 			return err
 		}
@@ -212,6 +213,7 @@ resource "openstack_compute_instance_v2" "instance_1" {
 resource "openstack_compute_volume_attach_v2" "va_1" {
   instance_id = "${openstack_compute_instance_v2.instance_1.id}"
   volume_id = "${openstack_blockstorage_volume_v3.volume_1.id}"
+  tag = "test"
   vendor_options {
     ignore_volume_confirmation = true
   }

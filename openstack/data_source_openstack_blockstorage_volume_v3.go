@@ -7,8 +7,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/extensions/volumehost"
-	"github.com/gophercloud/gophercloud/openstack/blockstorage/v3/volumes"
+	"github.com/gophercloud/gophercloud/v2/openstack/blockstorage/v3/volumes"
 )
 
 func dataSourceBlockStorageVolumeV3() *schema.Resource {
@@ -63,28 +62,40 @@ func dataSourceBlockStorageVolumeV3() *schema.Resource {
 				Computed: true,
 			},
 
-			"multiattach": {
-				Type:     schema.TypeBool,
-				Computed: true,
-			},
-
 			"host": {
 				Type:     schema.TypeString,
 				Optional: true,
 				Computed: true,
 			},
+
+			"attachment": {
+				Type:     schema.TypeSet,
+				Computed: true,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"id": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"instance_id": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"device": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+					},
+				},
+				Set: blockStorageVolumeV3AttachmentHash,
+			},
 		},
 	}
 }
 
-type VolumeWithHost struct {
-	volumes.Volume
-	volumehost.VolumeHostExt
-}
-
 func dataSourceBlockStorageVolumeV3Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	client, err := config.BlockStorageV3Client(GetRegion(d, config))
+	client, err := config.BlockStorageV3Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack block storage client: %s", err)
 	}
@@ -95,12 +106,12 @@ func dataSourceBlockStorageVolumeV3Read(ctx context.Context, d *schema.ResourceD
 		Status:   d.Get("status").(string),
 	}
 
-	allPages, err := volumes.List(client, listOpts).AllPages()
+	allPages, err := volumes.List(client, listOpts).AllPages(ctx)
 	if err != nil {
 		return diag.Errorf("Unable to query openstack_blockstorage_volume_v3: %s", err)
 	}
 
-	var allVolumes []VolumeWithHost
+	var allVolumes []volumes.Volume
 	err = volumes.ExtractVolumesInto(allPages, &allVolumes)
 	if err != nil {
 		return diag.Errorf("Unable to retrieve openstack_blockstorage_volume_v3: %s", err)
@@ -119,7 +130,7 @@ func dataSourceBlockStorageVolumeV3Read(ctx context.Context, d *schema.ResourceD
 	return nil
 }
 
-func dataSourceBlockStorageVolumeV3Attributes(d *schema.ResourceData, volume VolumeWithHost) {
+func dataSourceBlockStorageVolumeV3Attributes(d *schema.ResourceData, volume volumes.Volume) {
 	d.SetId(volume.ID)
 	d.Set("name", volume.Name)
 	d.Set("status", volume.Status)
@@ -127,10 +138,16 @@ func dataSourceBlockStorageVolumeV3Attributes(d *schema.ResourceData, volume Vol
 	d.Set("volume_type", volume.VolumeType)
 	d.Set("size", volume.Size)
 	d.Set("source_volume_id", volume.SourceVolID)
-	d.Set("multiattach", volume.Multiattach)
 	d.Set("host", volume.Host)
 
 	if err := d.Set("metadata", volume.Metadata); err != nil {
 		log.Printf("[DEBUG] Unable to set metadata for openstack_blockstorage_volume_v3 %s: %s", volume.ID, err)
+	}
+
+	attachments := flattenBlockStorageVolumeV3Attachments(volume.Attachments)
+	log.Printf("[DEBUG] openstack_blockstorage_volume_v3 %s attachments: %#v", d.Id(), attachments)
+	if err := d.Set("attachment", attachments); err != nil {
+		log.Printf(
+			"[DEBUG] unable to set openstack_blockstorage_volume_v3 %s attachments: %s", d.Id(), err)
 	}
 }

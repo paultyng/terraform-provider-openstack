@@ -1,14 +1,15 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"log"
-	"strings"
+	"net/http"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
+	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/retry"
 
-	"github.com/gophercloud/gophercloud"
-	"github.com/gophercloud/gophercloud/openstack/dns/v2/recordsets"
+	"github.com/gophercloud/gophercloud/v2"
+	"github.com/gophercloud/gophercloud/v2/openstack/dns/v2/recordsets"
 )
 
 // RecordSetCreateOpts represents the attributes used when creating a new DNS record set.
@@ -32,11 +33,11 @@ func (opts RecordSetCreateOpts) ToRecordSetCreateMap() (map[string]interface{}, 
 	return nil, fmt.Errorf("Expected map but got %T", b[""])
 }
 
-func dnsRecordSetV2RefreshFunc(dnsClient *gophercloud.ServiceClient, zoneID, recordsetID string) resource.StateRefreshFunc {
+func dnsRecordSetV2RefreshFunc(ctx context.Context, dnsClient *gophercloud.ServiceClient, zoneID, recordsetID string) retry.StateRefreshFunc {
 	return func() (interface{}, string, error) {
-		recordset, err := recordsets.Get(dnsClient, zoneID, recordsetID).Extract()
+		recordset, err := recordsets.Get(ctx, dnsClient, zoneID, recordsetID).Extract()
 		if err != nil {
-			if _, ok := err.(gophercloud.ErrDefault404); ok {
+			if gophercloud.ResponseCodeIs(err, http.StatusNotFound) {
 				return recordset, "DELETED", nil
 			}
 
@@ -46,16 +47,4 @@ func dnsRecordSetV2RefreshFunc(dnsClient *gophercloud.ServiceClient, zoneID, rec
 		log.Printf("[DEBUG] openstack_dns_recordset_v2 %s current status: %s", recordset.ID, recordset.Status)
 		return recordset, recordset.Status, nil
 	}
-}
-
-func dnsRecordSetV2ParseID(id string) (string, string, error) {
-	idParts := strings.Split(id, "/")
-	if len(idParts) != 2 {
-		return "", "", fmt.Errorf("Unable to determine openstack_dns_recordset_v2 ID from raw ID: %s", id)
-	}
-
-	zoneID := idParts[0]
-	recordsetID := idParts[1]
-
-	return zoneID, recordsetID, nil
 }

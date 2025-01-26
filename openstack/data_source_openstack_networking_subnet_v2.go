@@ -9,7 +9,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/subnets"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/subnets"
 )
 
 func dataSourceNetworkingSubnetV2() *schema.Resource {
@@ -37,16 +37,8 @@ func dataSourceNetworkingSubnetV2() *schema.Resource {
 			},
 
 			"dhcp_enabled": {
-				Type:          schema.TypeBool,
-				ConflictsWith: []string{"dhcp_disabled"},
-				Optional:      true,
-			},
-
-			"dhcp_disabled": {
-				Type:          schema.TypeBool,
-				ConflictsWith: []string{"dhcp_enabled"},
-				Optional:      true,
-				Deprecated:    "use dhcp_enabled instead",
+				Type:     schema.TypeBool,
+				Optional: true,
 			},
 
 			"network_id": {
@@ -84,6 +76,11 @@ func dataSourceNetworkingSubnetV2() *schema.Resource {
 			"subnet_id": {
 				Type:     schema.TypeString,
 				Computed: true,
+				Optional: true,
+			},
+
+			"dns_publish_fixed_ip": {
+				Type:     schema.TypeBool,
 				Optional: true,
 			},
 
@@ -182,7 +179,7 @@ func dataSourceNetworkingSubnetV2() *schema.Resource {
 
 func dataSourceNetworkingSubnetV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	networkingClient, err := config.NetworkingV2Client(GetRegion(d, config))
+	networkingClient, err := config.NetworkingV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -197,13 +194,8 @@ func dataSourceNetworkingSubnetV2Read(ctx context.Context, d *schema.ResourceDat
 		listOpts.Description = v.(string)
 	}
 
-	if v, ok := d.GetOkExists("dhcp_enabled"); ok {
+	if v, ok := getOkExists(d, "dhcp_enabled"); ok {
 		enableDHCP := v.(bool)
-		listOpts.EnableDHCP = &enableDHCP
-	}
-
-	if v, ok := d.GetOkExists("dhcp_disabled"); ok {
-		enableDHCP := !v.(bool)
 		listOpts.EnableDHCP = &enableDHCP
 	}
 
@@ -243,12 +235,17 @@ func dataSourceNetworkingSubnetV2Read(ctx context.Context, d *schema.ResourceDat
 		listOpts.SubnetPoolID = v.(string)
 	}
 
+	if v, ok := d.GetOk("dns_publish_fixed_ip"); ok {
+		v := v.(bool)
+		listOpts.DNSPublishFixedIP = &v
+	}
+
 	tags := networkingV2AttributesTags(d)
 	if len(tags) > 0 {
 		listOpts.Tags = strings.Join(tags, ",")
 	}
 
-	pages, err := subnets.List(networkingClient, listOpts).AllPages()
+	pages, err := subnets.List(networkingClient, listOpts).AllPages(ctx)
 	if err != nil {
 		return diag.Errorf("Unable to retrieve openstack_networking_subnet_v2: %s", err)
 	}
@@ -284,6 +281,7 @@ func dataSourceNetworkingSubnetV2Read(ctx context.Context, d *schema.ResourceDat
 	d.Set("gateway_ip", subnet.GatewayIP)
 	d.Set("enable_dhcp", subnet.EnableDHCP)
 	d.Set("subnetpool_id", subnet.SubnetPoolID)
+	d.Set("dns_publish_fixed_ip", subnet.DNSPublishFixedIP)
 	d.Set("all_tags", subnet.Tags)
 	d.Set("region", GetRegion(d, config))
 

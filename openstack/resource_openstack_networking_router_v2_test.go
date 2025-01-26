@@ -1,13 +1,14 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/layer3/routers"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/layer3/routers"
 )
 
 func TestAccNetworkingV2Router_basic(t *testing.T) {
@@ -86,7 +87,7 @@ func TestAccNetworkingV2Router_vendor_opts(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckNetworkingV2RouterExists("openstack_networking_router_v2.router_1", &router),
 					resource.TestCheckResourceAttr(
-						"openstack_networking_router_v2.router_1", "external_gateway", osExtGwID),
+						"openstack_networking_router_v2.router_1", "external_network_id", osExtGwID),
 				),
 			},
 		},
@@ -111,7 +112,7 @@ func TestAccNetworkingV2Router_vendor_opts_no_snat(t *testing.T) {
 				Check: resource.ComposeTestCheckFunc(
 					testAccCheckNetworkingV2RouterExists("openstack_networking_router_v2.router_1", &router),
 					resource.TestCheckResourceAttr(
-						"openstack_networking_router_v2.router_1", "external_gateway", osExtGwID),
+						"openstack_networking_router_v2.router_1", "external_network_id", osExtGwID),
 				),
 			},
 		},
@@ -122,7 +123,6 @@ func TestAccNetworkingV2Router_extFixedIPs(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			// (rule:create_router and (rule:create_router:external_gateway_info and (rule:create_router:external_gateway_info:network_id and rule:create_router:external_gateway_info:external_fixed_ips))) is disallowed by policy
 			testAccPreCheckAdminOnly(t)
 		},
 		ProviderFactories: testAccProviders,
@@ -147,7 +147,6 @@ func TestAccNetworkingV2Router_extSubnetIDs(t *testing.T) {
 	resource.Test(t, resource.TestCase{
 		PreCheck: func() {
 			testAccPreCheck(t)
-			// (rule:create_router and (rule:create_router:external_gateway_info and (rule:create_router:external_gateway_info:network_id and rule:create_router:external_gateway_info:external_fixed_ips))) is disallowed by policy
 			testAccPreCheckAdminOnly(t)
 		},
 		ProviderFactories: testAccProviders,
@@ -170,7 +169,7 @@ func TestAccNetworkingV2Router_extSubnetIDs(t *testing.T) {
 
 func testAccCheckNetworkingV2RouterDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	networkingClient, err := config.NetworkingV2Client(osRegionName)
+	networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -180,7 +179,7 @@ func testAccCheckNetworkingV2RouterDestroy(s *terraform.State) error {
 			continue
 		}
 
-		_, err := routers.Get(networkingClient, rs.Primary.ID).Extract()
+		_, err := routers.Get(context.TODO(), networkingClient, rs.Primary.ID).Extract()
 		if err == nil {
 			return fmt.Errorf("Router still exists")
 		}
@@ -201,12 +200,12 @@ func testAccCheckNetworkingV2RouterExists(n string, router *routers.Router) reso
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		networkingClient, err := config.NetworkingV2Client(osRegionName)
+		networkingClient, err := config.NetworkingV2Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack networking client: %s", err)
 		}
 
-		found, err := routers.Get(networkingClient, rs.Primary.ID).Extract()
+		found, err := routers.Get(context.TODO(), networkingClient, rs.Primary.ID).Extract()
 		if err != nil {
 			return err
 		}

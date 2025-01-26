@@ -1,6 +1,7 @@
 package openstack
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -8,8 +9,8 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/identity/v3/endpoints"
-	"github.com/gophercloud/gophercloud/pagination"
+	"github.com/gophercloud/gophercloud/v2/openstack/identity/v3/endpoints"
+	"github.com/gophercloud/gophercloud/v2/pagination"
 )
 
 func TestAccIdentityV3Endpoint_basic(t *testing.T) {
@@ -37,7 +38,7 @@ func TestAccIdentityV3Endpoint_basic(t *testing.T) {
 						"openstack_identity_service_v3.service_1", "region",
 						"openstack_identity_endpoint_v3.endpoint_1", "endpoint_region"),
 					resource.TestCheckResourceAttr(
-						"openstack_identity_endpoint_v3.endpoint_1", "url", "http://myservice.local"),
+						"openstack_identity_endpoint_v3.endpoint_1", "url", "http://myservice.local/v1.0/%(tenant_id)s"),
 				),
 			},
 			{
@@ -52,7 +53,7 @@ func TestAccIdentityV3Endpoint_basic(t *testing.T) {
 					resource.TestCheckResourceAttr(
 						"openstack_identity_endpoint_v3.endpoint_1", "endpoint_region", "interstate76"),
 					resource.TestCheckResourceAttr(
-						"openstack_identity_endpoint_v3.endpoint_1", "url", "http://my-new-service.local"),
+						"openstack_identity_endpoint_v3.endpoint_1", "url", "http://my-new-service/v1.0/%(tenant_id)s"),
 				),
 			},
 		},
@@ -61,7 +62,7 @@ func TestAccIdentityV3Endpoint_basic(t *testing.T) {
 
 func testAccCheckIdentityV3EndpointDestroy(s *terraform.State) error {
 	config := testAccProvider.Meta().(*Config)
-	identityClient, err := config.IdentityV3Client(osRegionName)
+	identityClient, err := config.IdentityV3Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack identity client: %s", err)
 	}
@@ -72,7 +73,7 @@ func testAccCheckIdentityV3EndpointDestroy(s *terraform.State) error {
 		}
 
 		var endpoint endpoints.Endpoint
-		endpoints.List(identityClient, nil).EachPage(func(page pagination.Page) (bool, error) { //nolint:errcheck
+		endpoints.List(identityClient, nil).EachPage(context.TODO(), func(ctx context.Context, page pagination.Page) (bool, error) { //nolint:errcheck
 			endpointList, err := endpoints.ExtractEndpoints(page)
 			if err != nil {
 				return false, err
@@ -106,13 +107,13 @@ func testAccCheckIdentityV3EndpointExists(n string, endpoint *endpoints.Endpoint
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		identityClient, err := config.IdentityV3Client(osRegionName)
+		identityClient, err := config.IdentityV3Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack identity client: %s", err)
 		}
 
 		var found *endpoints.Endpoint
-		err = endpoints.List(identityClient, nil).EachPage(func(page pagination.Page) (bool, error) {
+		err = endpoints.List(identityClient, nil).EachPage(context.TODO(), func(ctx context.Context, page pagination.Page) (bool, error) {
 			endpointList, err := endpoints.ExtractEndpoints(page)
 			if err != nil {
 				return false, err
@@ -152,7 +153,7 @@ resource "openstack_identity_endpoint_v3" "endpoint_1" {
   name = "%s"
   service_id = "${openstack_identity_service_v3.service_1.id}"
   endpoint_region = "${openstack_identity_service_v3.service_1.region}"
-  url = "http://myservice.local"
+  url = "http://myservice.local/v1.0/%%(tenant_id)s"
 }
   `, endpointName)
 }
@@ -168,7 +169,7 @@ resource "openstack_identity_endpoint_v3" "endpoint_1" {
   name = "%s"
   service_id = "${openstack_identity_service_v3.service_1.id}"
   endpoint_region = "interstate76"
-  url = "http://my-new-service.local"
+  url = "http://my-new-service/v1.0/%%(tenant_id)s"
 }
   `, endpointName)
 }

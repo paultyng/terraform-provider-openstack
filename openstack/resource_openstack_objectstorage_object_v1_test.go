@@ -1,20 +1,19 @@
 package openstack
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/resource"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/terraform"
 
-	"github.com/gophercloud/gophercloud/openstack/objectstorage/v1/containers"
-	"github.com/gophercloud/gophercloud/openstack/objectstorage/v1/objects"
+	"github.com/gophercloud/gophercloud/v2/openstack/objectstorage/v1/containers"
+	"github.com/gophercloud/gophercloud/v2/openstack/objectstorage/v1/objects"
 )
 
 const (
@@ -136,7 +135,7 @@ func TestAccObjectStorageV1Object_basic_check_destroy(t *testing.T) {
 
 func TestAccObjectStorageV1Object_fromSource(t *testing.T) {
 	content := []byte("foo")
-	tmpfile, err := ioutil.TempFile("", "tf_test_objectstorage_object")
+	tmpfile, err := os.CreateTemp("", "tf_test_objectstorage_object")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -269,7 +268,7 @@ func TestAccObjectStorageV1Object_objectManifest(t *testing.T) {
 
 func testAccCheckObjectStorageV1ObjectDestroy(s *terraform.State, objectname string) error {
 	config := testAccProvider.Meta().(*Config)
-	objectStorageClient, err := config.ObjectStorageV1Client(osRegionName)
+	objectStorageClient, err := config.ObjectStorageV1Client(context.TODO(), osRegionName)
 	if err != nil {
 		return fmt.Errorf("Error creating OpenStack object storage client: %s", err)
 	}
@@ -279,7 +278,7 @@ func testAccCheckObjectStorageV1ObjectDestroy(s *terraform.State, objectname str
 			continue
 		}
 
-		_, err := objects.Get(objectStorageClient, "tf_test_container_1", objectname, &objects.GetOpts{}).Extract()
+		_, err := objects.Get(context.TODO(), objectStorageClient, "tf_test_container_1", objectname, &objects.GetOpts{}).Extract()
 		if err == nil {
 			return fmt.Errorf("Container object still exists")
 		}
@@ -300,17 +299,17 @@ func testAccCheckObjectStorageV1ObjectExists(n string, object *objects.GetHeader
 		}
 
 		config := testAccProvider.Meta().(*Config)
-		objectStorageClient, err := config.ObjectStorageV1Client(osRegionName)
+		objectStorageClient, err := config.ObjectStorageV1Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack object storage client: %s", err)
 		}
 
-		parts := strings.SplitN(rs.Primary.ID, "/", 2)
-		if len(parts) < 2 {
-			return fmt.Errorf("Malformed object name: %s", rs.Primary.ID)
+		container, obj, err := parsePairedIDs(rs.Primary.ID, "openstack_objectstorage_object_v1")
+		if err != nil {
+			return err
 		}
 
-		found, err := objects.Get(objectStorageClient, parts[0], parts[1], nil).Extract()
+		found, err := objects.Get(context.TODO(), objectStorageClient, container, obj, nil).Extract()
 		if err != nil {
 			return err
 		}
@@ -339,17 +338,17 @@ func testAccCheckObjectStorageV1ObjectDeleteAtMatches(expected string, object *o
 func testAccCheckObjectStorageV1DestroyContainer(container, object string) resource.TestCheckFunc {
 	return func(s *terraform.State) error {
 		config := testAccProvider.Meta().(*Config)
-		objectStorageClient, err := config.ObjectStorageV1Client(osRegionName)
+		objectStorageClient, err := config.ObjectStorageV1Client(context.TODO(), osRegionName)
 		if err != nil {
 			return fmt.Errorf("Error creating OpenStack object storage client: %s", err)
 		}
 
-		_, err = objects.Delete(objectStorageClient, container, object, nil).Extract()
+		_, err = objects.Delete(context.TODO(), objectStorageClient, container, object, nil).Extract()
 		if err != nil {
 			return err
 		}
 
-		_, err = containers.Delete(objectStorageClient, container).Extract()
+		_, err = containers.Delete(context.TODO(), objectStorageClient, container).Extract()
 		if err != nil {
 			return err
 		}

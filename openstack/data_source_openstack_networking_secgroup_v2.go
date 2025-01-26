@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"github.com/gophercloud/gophercloud/openstack/networking/v2/extensions/security/groups"
+	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
 )
 
 func dataSourceNetworkingSecGroupV2() *schema.Resource {
@@ -40,6 +40,11 @@ func dataSourceNetworkingSecGroupV2() *schema.Resource {
 				ForceNew: true,
 				Computed: true,
 			},
+			"stateful": {
+				Type:     schema.TypeBool,
+				Optional: true,
+				Computed: true,
+			},
 			"tags": {
 				Type:     schema.TypeSet,
 				Optional: true,
@@ -56,7 +61,7 @@ func dataSourceNetworkingSecGroupV2() *schema.Resource {
 
 func dataSourceNetworkingSecGroupV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	networkingClient, err := config.NetworkingV2Client(GetRegion(d, config))
+	networkingClient, err := config.NetworkingV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack networking client: %s", err)
 	}
@@ -67,13 +72,17 @@ func dataSourceNetworkingSecGroupV2Read(ctx context.Context, d *schema.ResourceD
 		Description: d.Get("description").(string),
 		TenantID:    d.Get("tenant_id").(string),
 	}
+	if v, ok := getOkExists(d, "stateful"); ok {
+		v := v.(bool)
+		listOpts.Stateful = &v
+	}
 
 	tags := networkingV2AttributesTags(d)
 	if len(tags) > 0 {
 		listOpts.Tags = strings.Join(tags, ",")
 	}
 
-	pages, err := groups.List(networkingClient, listOpts).AllPages()
+	pages, err := groups.List(networkingClient, listOpts).AllPages(ctx)
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -99,6 +108,7 @@ func dataSourceNetworkingSecGroupV2Read(ctx context.Context, d *schema.ResourceD
 	d.Set("name", secGroup.Name)
 	d.Set("description", secGroup.Description)
 	d.Set("tenant_id", secGroup.TenantID)
+	d.Set("stateful", secGroup.Stateful)
 	d.Set("all_tags", secGroup.Tags)
 	d.Set("region", GetRegion(d, config))
 

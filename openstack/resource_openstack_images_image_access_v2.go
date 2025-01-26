@@ -10,7 +10,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/validation"
 
-	"github.com/gophercloud/gophercloud/openstack/imageservice/v2/members"
+	"github.com/gophercloud/gophercloud/v2/openstack/image/v2/members"
 )
 
 func resourceImagesImageAccessV2() *schema.Resource {
@@ -73,7 +73,7 @@ func resourceImagesImageAccessV2() *schema.Resource {
 
 func resourceImagesImageAccessV2Create(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	imageClient, err := config.ImageV2Client(GetRegion(d, config))
+	imageClient, err := config.ImageV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack image client: %s", err)
 	}
@@ -82,7 +82,7 @@ func resourceImagesImageAccessV2Create(ctx context.Context, d *schema.ResourceDa
 	memberID := d.Get("member_id").(string)
 
 	// create share request on the producer side
-	_, err = members.Create(imageClient, imageID, memberID).Extract()
+	_, err = members.Create(ctx, imageClient, imageID, memberID).Extract()
 	if err != nil {
 		return diag.Errorf("Error sharing a %q image with the %q member: %s", imageID, memberID, err)
 	}
@@ -90,13 +90,13 @@ func resourceImagesImageAccessV2Create(ctx context.Context, d *schema.ResourceDa
 	id := fmt.Sprintf("%s/%s", imageID, memberID)
 	d.SetId(id)
 
-	if v, ok := d.GetOkExists("status"); ok {
+	if v, ok := getOkExists(d, "status"); ok {
 		d.Partial(true)
 
 		opts := members.UpdateOpts{
 			Status: v.(string),
 		}
-		_, err = members.Update(imageClient, imageID, memberID, opts).Extract()
+		_, err = members.Update(ctx, imageClient, imageID, memberID, opts).Extract()
 		if err != nil {
 			return diag.Errorf("Error updating the %q image with the %q member: %s", imageID, memberID, err)
 		}
@@ -109,17 +109,17 @@ func resourceImagesImageAccessV2Create(ctx context.Context, d *schema.ResourceDa
 
 func resourceImagesImageAccessV2Read(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	imageClient, err := config.ImageV2Client(GetRegion(d, config))
+	imageClient, err := config.ImageV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack image client: %s", err)
 	}
 
-	imageID, memberID, err := resourceImagesImageAccessV2ParseID(d.Id())
+	imageID, memberID, err := parsePairedIDs(d.Id(), "openstack_images_image_access_v2")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
-	member, err := members.Get(imageClient, imageID, memberID).Extract()
+	member, err := members.Get(ctx, imageClient, imageID, memberID).Extract()
 	if err != nil {
 		return diag.FromErr(CheckDeleted(d, err, "Error retrieving the openstack_images_image_access_v2"))
 	}
@@ -140,12 +140,12 @@ func resourceImagesImageAccessV2Read(ctx context.Context, d *schema.ResourceData
 
 func resourceImagesImageAccessV2Update(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	imageClient, err := config.ImageV2Client(GetRegion(d, config))
+	imageClient, err := config.ImageV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack image client: %s", err)
 	}
 
-	imageID, memberID, err := resourceImagesImageAccessV2ParseID(d.Id())
+	imageID, memberID, err := parsePairedIDs(d.Id(), "openstack_images_image_access_v2")
 	if err != nil {
 		return diag.FromErr(err)
 	}
@@ -155,7 +155,7 @@ func resourceImagesImageAccessV2Update(ctx context.Context, d *schema.ResourceDa
 	opts := members.UpdateOpts{
 		Status: status,
 	}
-	_, err = members.Update(imageClient, imageID, memberID, opts).Extract()
+	_, err = members.Update(ctx, imageClient, imageID, memberID, opts).Extract()
 	if err != nil {
 		return diag.Errorf("Error updating the %q image with the %q member: %s", imageID, memberID, err)
 	}
@@ -165,19 +165,19 @@ func resourceImagesImageAccessV2Update(ctx context.Context, d *schema.ResourceDa
 
 func resourceImagesImageAccessV2Delete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	config := meta.(*Config)
-	imageClient, err := config.ImageV2Client(GetRegion(d, config))
+	imageClient, err := config.ImageV2Client(ctx, GetRegion(d, config))
 	if err != nil {
 		return diag.Errorf("Error creating OpenStack image client: %s", err)
 	}
 
-	imageID, memberID, err := resourceImagesImageAccessV2ParseID(d.Id())
+	imageID, memberID, err := parsePairedIDs(d.Id(), "openstack_images_image_access_v2")
 	if err != nil {
 		return diag.FromErr(err)
 	}
 
 	log.Printf("[DEBUG] Deleting Image member %s", d.Id())
 
-	if err := members.Delete(imageClient, imageID, memberID).Err; err != nil {
+	if err := members.Delete(ctx, imageClient, imageID, memberID).ExtractErr(); err != nil {
 		return diag.FromErr(CheckDeleted(d, err, "Error deleting the openstack_images_image_access_v2"))
 	}
 
